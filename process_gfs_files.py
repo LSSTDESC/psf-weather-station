@@ -5,16 +5,16 @@ from os import listdir
 import pickle
 
 
-def load_uv(date='0501', time='0000', latitude=-30, longitude=289.5):
+def load_uv(date='0501', time='0000', year='2019', latitude=-30, longitude=289.5):
     '''
     Load the U and V componenents of wind for the GFS file
     corresponding to the given date and time.
     '''
     # load in this dataset (specific date/time)
     try:
-        grbs = pygrib.open(f'rawGFS/gfsanl_4_2019{date}_{time}_000.grb2')
+        grbs = pygrib.open(f'rawGFS/gfsanl_4_{year}{date}_{time}_000.grb2')
     except FileNotFoundError:
-        print(f'Could not find: rawGFS/gfsanl_4_2019{date}_{time}_000.grb2')
+        print(f'Could not find: rawGFS/gfsanl_4_{year}{date}_{time}_000.grb2')
         return None
 
     # select an example variable
@@ -48,7 +48,7 @@ value_dicts = []
 for f in rawFiles:
     if len(f) < 10:
         continue
-    # get date and time from the filename string, make a timestamp
+    # get date (without year) and time from the filename string, make a timestamp
     d, t = f.split('.')[0].split('_')[2:4]
     try:
         timestamp = pd.Timestamp(f'{d}T{t[:2]}', tz='UTC')
