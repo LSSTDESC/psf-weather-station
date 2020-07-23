@@ -2,6 +2,7 @@ import numpy as np
 import pickle
 import pandas as pd
 import pathlib
+import utils
 
 class ParameterGenerator():
     '''
@@ -13,67 +14,45 @@ class ParameterGenerator():
         # False until data have been temporally matched, to keep track of what is being used
         self.matched = False 
         # define path using pathlib
-        self.p = pathlib.Path('.')
+        self.p = pathlib.Path('.').resolve()
         self.gfs_loaded = False
         self.cp_loaded = False
 
         self.gfs_ground = 6
 
-
-    def _load_gfs(self, gfs_path='/data/gfswinds_20190501-20191031.pkl'):
+    def _load_gfs(self, gfs_path='data/gfswinds_cp_20190501-20191031.pkl'):
         '''
         load pickle file of GFS winds and store in class
         '''
-        gfs_path = self.p/pathlib.Path(gfs_path)
+        gfs_path = self.p / pathlib.Path(gfs_path)
+
         if gfs_path.is_file():
-            self.gfs_winds = pickle.load(open(gfs_path, 'rb'))
+            gfs_winds = pickle.load(open(gfs_path, 'rb'))
+            self.gfs_winds = utils.process_gfs(gfs_winds)
         else:
             raise FileNotFoundError(f'file {gfs_path} not found!')
 
-        self.gfs_winds['speed'] = [np.hypot(gfs_winds['u'].values[i][::-1], 
-                                            gfs_winds['v'].values[i][::-1])[self.gfs_ground:] 
-                                   for i in range(len(gfs_winds))]
-        
         h_path = gfs_path.with_name('H.npy')
         if h_path.is_file():
-            self.gfs_h = np.load(open(h_path, 'rb'))
+            self.gfs_h = np.load(open(h_path, 'rb'))[::-1]
         else:
             raise FileNotFoundError(f'file {h_path} not found!')
 
         return True
 
-    def _process_gfs(self):
-        '''
-        Process GFS data: calculate speed and directions
-        '''
-        if self.gfs_loaded:
-            self.gfs_winds['speed'] = [np.hypot(self.gfs_winds['u'].values[i][::-1], 
-                                                self.gfs_winds['v'].values[i][::-1])[self.gfs_ground:] 
-                                       for i in range(len(self.gfs_winds))]
-
-            self.gfs_winds['dir'] = [utils.smooth_direction(self.gfs_winds['v'].values[i][::-1],
-                                                            self.gfs_winds['u'].values[i][::-1])[self.gfs_ground:] 
-                                       for i in range(len(self.gfs_winds))]
-
-
-    def _load_telemetry(self, telemetry_path='/data/cptelemetry_20190501-20191101.pkl'):
+    def _load_telemetry(self, telemetry_path='data/cptelemetry_20190501-20191101.pkl'):
         '''
         load pickle file of CP telemetry and store only winds in class
         '''
-        telemetry_path = self.p/pathlib.Path(telemetry_path)
+        telemetry_path = self.p / pathlib.Path(telemetry_path)
+
         if telemetry_path.is_file():
             telemetry = pickle.load(open(telemetry_path, 'rb'))
+
+            self.cp_telemetry, self.cp_masks = utils.process_telemetry(telemetry)
+            self.cp_ground = 2715 + 50
         else:
             raise FileNotFoundError(f'file {telemetry_path} not found!')
-
-        self.cp_wind_dir = pd.DataFrame(telemetry['WindDir_twr']) 
-        self.cp_wind_speed = pd.DataFrame(telemetry['WindSpd_twr'])
-
-        for dframe in [self.cp_wind_dir, self.cp_wind_speed]:
-            dframe.index = pd.to_datetime(dframe['dts'], utc=True)
-
-        self.cp_masks = {'speed': self.cp_wind_speed != 0,
-                         'dir': self.cp_wind_dir <= 360}
 
         return True
 
@@ -82,15 +61,18 @@ class ParameterGenerator():
         temporally match the GFS and telemetry data
         '''
         if self.gfs_loaded and self.cp_loaded:
-            gfs_in_range = self.gfs_winds[dr[0], dr[1]]
-            cp_in_range = self.cp_wind_speed[dr[0], dr[1]][self.cp_masks['speed']]
+            print
+            gfs_dates = self.gfs_winds['speed'][dr[0]:dr[1]].index
+            n_gfs = len(gfs_dates)
+            cp_in_range = self.cp_telemetry['speed'][self.cp_masks['speed']][dr[0]:dr[1]]
             
-            cp_matched = np.zeros(len(gfs_in_range))
-            for i in range(len(gfs_in_range)):
-                cp_ids_close = abs(gfs_in_range.index[i] - cp_in_range.index) < pd.Timedelta('30min')
-                cp_close = cp_in_range[cp_ids_close]
+            cp_matched = np.zeros(n_gfs)
+            for i in range(n_gfs):
+                cp_ids_close = abs(gfs_dates[i] - cp_in_range.index) < pd.Timedelta('30min')
+                cp_close = cp_in_range[cp_ids_close]['vals']
                 cp_matched[i] = cp_close[cp_close<40].median()
 
+            self.cp_telemetry['matched'] = cp_matched
             return True
         else:
             return False
