@@ -1,7 +1,6 @@
 import numpy as np
-import gen_params
 import pathlib 
-import psf-weather-station as pws
+import psfws as pws
 
 def test_loading():
     pgen = pws.gen_params.ParameterGenerator()

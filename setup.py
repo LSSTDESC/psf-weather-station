@@ -9,7 +9,7 @@ setup(
     author='claire',
     author_email='chebert@stanford.edu',
     license='MIT',
-    packages=['psf-weather-station'],
+    packages=['pws'],
     python_requires='>=3.5',
     zip_safe=False
 )
