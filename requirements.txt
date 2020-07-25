@@ -2,4 +2,4 @@ numpy>=1.12
 astropy>=2.0
 pytest>=3.6
 scipy>=1.2.0
-pandas>=1.01
+pandas>=1.0.1
