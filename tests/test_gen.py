@@ -1,9 +1,10 @@
 import numpy as np
 import gen_params
 import pathlib 
+import psf-weather-station as pws
 
 def test_loading():
-    pgen = gen_params.ParameterGenerator()
+    pgen = pws.gen_params.ParameterGenerator()
 
     try: 
         gfs_l = pgen._load_gfs()
@@ -20,7 +21,7 @@ def test_loading():
     return gfs_l and cp_l
 
 def test_processing():
-    pgen = gen_params.ParameterGenerator()
+    pgen = pws.gen_params.ParameterGenerator()
     pgen._load_gfs()
     t_speed = (pgen.gfs_winds['speed'].iloc[0] == np.hypot(pgen.gfs_winds['u'].iloc[0], 
                                                      pgen.gfs_winds['v'].iloc[0])).all()
@@ -28,7 +29,7 @@ def test_processing():
     return t_speed and t_order
 
 def test_matching():
-    pgen = gen_params.ParameterGenerator()
+    pgen = pws.gen_params.ParameterGenerator()
     pgen.gfs_loaded = pgen._load_gfs()
     pgen.cp_loaded = pgen._load_telemetry()
 
