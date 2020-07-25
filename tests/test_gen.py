@@ -1,6 +1,6 @@
 import numpy as np
 import pathlib 
-import psfws as pws
+import pws
 
 def test_loading():
     pgen = pws.gen_params.ParameterGenerator()
