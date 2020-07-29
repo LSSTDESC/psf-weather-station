@@ -7,13 +7,13 @@ import pws
 
 def test_init():
     try:
-        pgen = pws.gen_params.ParameterGenerator()
+        pgen = pws.gen_params.ParameterGenerator(pkg_home='./')
         return True
     except:
         return False
 
 def test_load():
-    pgen = pws.gen_params.ParameterGenerator()
+    pgen = pws.gen_params.ParameterGenerator(pkg_home='./')
     try: 
         outs = pgen._load_data()
         return len(outs)==3
@@ -21,7 +21,7 @@ def test_load():
         return False
 
 def test_gfs_processing():
-    pgen = pws.gen_params.ParameterGenerator()
+    pgen = pws.gen_params.ParameterGenerator(pkg_home='./')
     gfs_winds, *rest = pgen._load_data()
     t_speed = (gfs_winds['speed'].iloc[0] == np.hypot(gfs_winds['u'].iloc[0], 
                                                       gfs_winds['v'].iloc[0])).all()
@@ -29,7 +29,7 @@ def test_gfs_processing():
     return t_speed and t_order
 
 def test_telemetry_processing():
-    pgen = pws.gen_params.ParameterGenerator()
+    pgen = pws.gen_params.ParameterGenerator(pkg_home='./')
     _, cp, mask = pgen._load_data()
 
     try:
@@ -45,11 +45,7 @@ def test_telemetry_processing():
     return t_mask_cut and t_mask_nonzero
 
 def test_matching():
-    pgen = pws.gen_params.ParameterGenerator()
-
-    # test lengths of matched data are nonzero 
-    # and that they match the gfs data!
-    # test that none of the matched data are nan
+    pgen = pws.gen_params.ParameterGenerator(pkg_home='./')
     try: 
         pgen._match_data()
     except:
