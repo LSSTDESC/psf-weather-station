@@ -10,9 +10,10 @@ class ParameterGenerator():
     uses NOAA GFS predictions matched with telemetry from Cerro Pachon.
     '''
     def __init__(self, gfs_file='data/gfswinds_cp_20190501-20191031.pkl', gfs_h_file='data/H.npy',
-                 telemetry_file='data/cptelemetry_20190501-20191101.pkl'):
-        # define path using pathlib
-        self.p = pathlib.Path('.').resolve()
+                 telemetry_file='data/cptelemetry_20190501-20191101.pkl', 
+                 pkg_home='/Users/clairealice/Documents/repos/psf-weather-station'):
+        # define path using pathlib -- is there a way to not do this manually? not sure what I'm looking for exactly 
+        self.p = pathlib.Path(pkg_home)
         
         # check that the pointed data files exist:
         self.gfs_f = self.p / pathlib.Path(gfs_file)
@@ -28,8 +29,10 @@ class ParameterGenerator():
             raise FileNotFoundError(f'file {self.tel_f} not found!')
 
         # altitude info
-        self.gfs_stop = 11
-        self.cp_ground = 2715 + 50
+        self.gfs_stop = 10
+        self.cp_ground = (2715 + 50) / 1000
+
+        self._match_data()
 
     def _load_data(self):
         '''
@@ -38,7 +41,7 @@ class ParameterGenerator():
         gfs_winds = pickle.load(open(self.gfs_f, 'rb'))
         gfs_winds = utils.process_gfs(gfs_winds)
 
-        self.gfs_h = np.load(open(self.gfs_h_f, 'rb'))[::-1]
+        self.gfs_h = np.load(open(self.gfs_h_f, 'rb'))[::-1] / 1000
 
         telemetry = pickle.load(open(self.tel_f, 'rb'))
         telemetry, tel_masks = utils.process_telemetry(telemetry)
@@ -57,38 +60,54 @@ class ParameterGenerator():
         speed = telemetry['speed'].loc[tel_masks['speed']][dr[0]:dr[1]]
         direction = telemetry['dir'].loc[tel_masks['dir']][dr[0]:dr[1]]
 
-        matched_s, matched_d = utils.match_telemetry(speed, directions, gfs_dates)
+        matched_s, matched_d, updated_gfs_dates = utils.match_telemetry(speed, direction, gfs_dates)
         
-        self.telemetry = {'speed': matched_s,'dir': matched_d}
-        self.gfs_winds = gfs_winds.loc[gfs_dates].iloc[ids_to_keep]
-
-    def _construct_wind_set(self):
-        '''
-        construct a vector of winds vs altitude using GFS till self.gfs_stop and matched telemetry 
-        '''
-
-
-
-    def _interpolate_wind(self, h):
-        '''
-        use matched data to interpolate 
-        '''
-
-        # utils.interpolate()
+        self.telemetry = {'speed': matched_s, 'dir': matched_d, 
+                          'u': matched_s * np.cos(matched_d), 'v': matched_s * np.sin(matched_d)}
+        self.gfs_winds = gfs_winds.loc[updated_gfs_dates]
 
     def _calculate_cn2(self):
         '''
         use GFS winds and other models to calculate a Cn2 profile
         '''
 
-    def draw_parameters(self):
+    def get_wind_parameters(self, pt):
         '''
-        randomly sample the data
+        construct a vector of wind speed+direction vs altitude using GFS till self.gfs_stop and matched telemetry 
         '''
+        speed = np.hstack([self.telemetry['speed'][pt],
+                           self.gfs_winds.iloc[pt]['speed'][self.gfs_stop:]])
 
-    # should be a method where you can choose which parameters to draw?
-    # should the Cn2 be calculated for all the GFS data or only for when you draw parameters?
-    # keyword argument to specify?
+        direction = np.hstack([self.telemetry['dir'][pt],
+                               self.gfs_winds.iloc[pt]['dir'][self.gfs_stop:]])
 
+        u = np.hstack([self.telemetry['u'][pt],
+                       self.gfs_winds.iloc[pt]['u'][self.gfs_stop:]])
+
+        v = np.hstack([self.telemetry['v'][pt],
+                       self.gfs_winds.iloc[pt]['v'][self.gfs_stop:]])
+
+        height = np.hstack([self.cp_ground, self.gfs_h[self.gfs_stop:]])
+
+        return {'u': u, 'v': v, 'speed': speed, 'direction': utils.smooth_direction(direction), 'h': height}
+
+    def draw_wind_parameters(self):
+        '''
+        randomly sample from the data
+        '''
+        pt = np.random.choice(range(len(self.gfs_winds)))
+ 
+        return self.get_wind_parameters(pt)
+
+    def do_interpolation(self, p_dict, h_interp, kind='gp'):
+        '''
+        use matched data to interpolate 
+        '''
+        new_u = utils.interpolate(p_dict['h'], p_dict['u'], h_interp, kind)
+        new_v = utils.interpolate(p_dict['h'], p_dict['v'], h_interp, kind)
+
+        new_direction = utils.to_direction(new_v, new_u)
+        return {'u': new_u, 'v': new_v, 'speed': np.hypot(new_u, new_v), 
+                'direction': utils.smooth_direction(new_direction), 'h': h_interp}
 
 
