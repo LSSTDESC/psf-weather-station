@@ -10,7 +10,7 @@ def process_telemetry(telemetry_df):
     - a dict holding a dataframe each for wind directions and speeds
     - a dict with masks for each of the above dfs
     '''
-    tel_dir = pd.DataFrame(telemetry_df['WindDir_twr']).sample(n=20_000) % 360
+    tel_dir = pd.DataFrame(telemetry_df['WindDir_twr']).sample(n=20_000)
     tel_speed = pd.DataFrame(telemetry_df['WindSpd_twr']).sample(n=20_000)
 
     for dframe in [tel_dir, tel_speed]:
@@ -18,7 +18,7 @@ def process_telemetry(telemetry_df):
 
     nonzero = tel_speed.index[tel_speed['vals'] != 0]
     cut = tel_speed.index[tel_speed['vals'] < 40]
-    cp_masks = {'speed': nonzero & cut, 'dir': tel_dirq.index}
+    cp_masks = {'speed': nonzero & cut, 'dir': tel_dir.index}
 
     return {'dir': tel_dir, 'speed': tel_speed}, cp_masks
 
@@ -58,14 +58,14 @@ def match_telemetry(speed, direction, gfs_dates):
     dir_ids = [direction.index[abs(gfs_dates[i] - direction.index) < pd.Timedelta('30min')] 
                for i in range(n_gfs)]
     
-    ids_to_keep = [i for i in range(n_gfs) if len(speed_ids[i])!=0 and len(dir_ids)!=0]
+    ids_to_keep = [i for i in range(n_gfs) if len(speed_ids[i])!=0 and len(dir_ids[i])!=0]
     
     matched_s = [np.median(speed.loc[speed_ids[i]]['vals']) for i in range(n_gfs) if i in ids_to_keep]
     matched_d = [np.median(direction.loc[dir_ids[i]]['vals']) for i in range(n_gfs) if i in ids_to_keep]
 
     return matched_s, matched_d, gfs_dates[ids_to_keep]
 
-def interpolate(x, y, new_x):
+def interpolate(x, y, new_x, kind):
     '''
     function to perform either cubic or GP interpolation of inputs
     returns interpolation new_y at positions new_x
