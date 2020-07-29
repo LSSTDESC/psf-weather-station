@@ -1,4 +1,5 @@
 numpy>=1.12
+sklearn>=0.22.0
 astropy>=2.0
 pytest>=3.6
 scipy>=1.2.0
