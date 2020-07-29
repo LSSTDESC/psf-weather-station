@@ -3,8 +3,7 @@ import pathlib
 import pws
 
 ## TO DO ##
-# test_matching does almost nothing except check that the method
-# didn't raise an error: make a better test.
+# need to test wind parameters and interpolation 
 
 def test_init():
     try:
@@ -59,9 +58,13 @@ def test_matching():
     l_gfs = len(pgen.gfs_winds)
     t_len = (len(pgen.telemetry['speed'])==l_gfs) and (len(pgen.telemetry['dir'])==l_gfs)
 
-    t_nan = np.isfinite(pgen.telemetry['speed']).all() and np.isfinite(pgen.dir['speed']).all()
+    t_nan = np.isfinite(pgen.telemetry['speed']).all() and np.isfinite(pgen.telemetry['dir']).all()
            
     return t_len and t_nan
+
+# def test_interpolation()
+#     pgen = pws.gen_params.ParameterGenerator()
+#     pgen._match_data()
 
 
 if __name__ == '__main__':
