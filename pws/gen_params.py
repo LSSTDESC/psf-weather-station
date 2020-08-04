@@ -12,7 +12,8 @@ class ParameterGenerator():
     def __init__(self, gfs_file='data/gfswinds_cp_20190501-20191031.pkl', gfs_h_file='data/H.npy',
                  telemetry_file='data/cptelemetry_20190501-20191101.pkl', 
                  pkg_home='/Users/clairealice/Documents/repos/psf-weather-station'):
-        # define path using pathlib -- is there a way to not do this manually? not sure what I'm looking for exactly 
+        # define path using pathlib -- is there a way to not do this manually? 
+        # not sure what I'm looking for exactly 
         self.p = pathlib.Path(pkg_home)
         
         # check that the pointed data files exist:
@@ -61,9 +62,10 @@ class ParameterGenerator():
         direction = telemetry['dir'].loc[tel_masks['dir']][dr[0]:dr[1]]
 
         matched_s, matched_d, updated_gfs_dates = utils.match_telemetry(speed, direction, gfs_dates)
+        matched_comps = utils.to_components(matched_s, matched_d)
         
         self.telemetry = {'speed': matched_s, 'dir': matched_d, 
-                          'u': matched_s * np.cos(matched_d), 'v': matched_s * np.sin(matched_d)}
+                          'u': matched_comps['u'], 'v': matched_comps['v']}
         self.gfs_winds = gfs_winds.loc[updated_gfs_dates]
 
     def _calculate_cn2(self):
@@ -73,7 +75,8 @@ class ParameterGenerator():
 
     def get_wind_parameters(self, pt):
         '''
-        construct a vector of wind speed+direction vs altitude using GFS till self.gfs_stop and matched telemetry 
+        construct a vector of wind speed+direction vs altitude using GFS,
+        till self.gfs_stop and matched telemetry 
         '''
         speed = np.hstack([self.telemetry['speed'][pt],
                            self.gfs_winds.iloc[pt]['speed'][self.gfs_stop:]])
@@ -89,7 +92,8 @@ class ParameterGenerator():
 
         height = np.hstack([self.cp_ground, self.gfs_h[self.gfs_stop:]])
 
-        return {'u': u, 'v': v, 'speed': speed, 'direction': utils.smooth_direction(direction), 'h': height}
+        return {'u': u, 'v': v, 'speed': speed, 
+                'direction': utils.smooth_direction(direction), 'h': height}
 
     def draw_wind_parameters(self):
         '''

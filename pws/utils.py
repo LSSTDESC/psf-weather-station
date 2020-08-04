@@ -22,9 +22,16 @@ def process_telemetry(telemetry_df):
 
     return {'dir': tel_dir, 'speed': tel_speed}, cp_masks
 
-def to_direction(v, u):
-    ''' calculate wind direction from u,v components'''
-    return np.arctan2(u, v)*(180/np.pi)
+def to_direction(x, y):
+    '''calculate wind direction from u,v components'''
+    d = np.arctan2(y, x) * (180/np.pi)
+    return (d + 180) % 360
+
+def to_components(s, d):
+    '''calculate the wind velocity components given speed/direction'''
+    v = s * np.cos((d - 180) * np.pi/180)
+    u = s * np.sin((d - 180) * np.pi/180)
+    return {'v': v, 'u': u}
 
 def process_gfs(gfs_df):
     '''
@@ -63,7 +70,7 @@ def match_telemetry(speed, direction, gfs_dates):
     matched_s = [np.median(speed.loc[speed_ids[i]]['vals']) for i in range(n_gfs) if i in ids_to_keep]
     matched_d = [np.median(direction.loc[dir_ids[i]]['vals']) for i in range(n_gfs) if i in ids_to_keep]
 
-    return matched_s, matched_d, gfs_dates[ids_to_keep]
+    return np.array(matched_s), np.array(matched_d), gfs_dates[ids_to_keep]
 
 def interpolate(x, y, new_x, kind):
     '''
