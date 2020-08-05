@@ -42,6 +42,8 @@ def process_gfs(gfs_df):
     '''
     # TO DO: take only non-daytime points
     # gfs_df = gfs_df.index[]
+    not_daytime = gfs_df.index.hour!=12
+    gfs_df = gfs_df.iloc[not_daytime]
 
     gfs_df['u'] = [gfs_df['u'].values[i][::-1][:-5] for i in range(len(gfs_df))]
     gfs_df['v'] = [gfs_df['v'].values[i][::-1][:-5] for i in range(len(gfs_df))]
