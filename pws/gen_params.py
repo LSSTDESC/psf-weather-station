@@ -68,6 +68,8 @@ class ParameterGenerator():
                           'u': matched_comps['u'], 'v': matched_comps['v']}
         self.gfs_winds = gfs_winds.loc[updated_gfs_dates]
 
+        self.N = len(self.gfs_winds)
+
     def get_raw_wind(self, pt):
         '''
         construct a vector of wind speed+direction vs altitude using GFS,
@@ -109,19 +111,26 @@ class ParameterGenerator():
         huf_stop = 12
         # find the z and wind speed that are valid for the hufnagel model
         huf_h = self.gfs_h[huf_stop:] * 1000
-        huf_wind = self.gfs_wind.iloc[pt]['speed'][huf_stop:]
+        huf_wind = self.gfs_winds.iloc[pt]['speed'][huf_stop:]
         # calculate hufnagel cn2 for those
         huf = utils.hufnagel(huf_h, huf_wind)
         # get the ground layer cn2
         gl, gl_h = utils.gl_cn2()
 
         # return stacked hufnagel and ground layer profiles/altitudes
-        return np.hstack([gl, huf]), np.hstack([gl_h, huf_h])
+        return np.hstack([gl, huf]), np.hstack([gl_h, huf_h / 1000])
 
-    def get_turbulence_integral(self, pt, binning='c', nbins=7, layers=None):
+    def get_cn2_all(self):
+        '''get array of cn2 values for the whole dataset'''
+        cn2_list = []
+        for i in range(self.N):
+            cn2, h = self.get_cn2(i)
+            cn2_list.append(cn2)
+        return np.array(cn2_list)
+
+    def integrate_cn2(self, cn2, h, binning='c', nbins=7, layers=None):
         '''
         get an integrated Cn2 profile 
-
         :binning: how to define the bins for the integration, can be either 'log' for log spaced bins 
         in altitude, or 'er' to follow the bin centers from ER 2000
         :nbins: if binning=='log', this determines how many bins will be used
@@ -143,13 +152,18 @@ class ParameterGenerator():
                 bin_centers = layers
             edges = [g]+[np.mean(bin_centers[i:i+2]) for i in range(len(bin_centers)-1)]+[maxh]
 
-        # get cn2
-        cn2, h = self.get_cn2(pt)
-        # integrate cn2 in bins defined by edges
-        j = utils.integrate_cn2(cn2, h, edges, ground=g, maxh=maxh)
+        # integrate cn2 in bins defined by these edges
+        j = utils.integrate_in_bins(cn2, h, edges, ground=g, maxh=maxh)
         # return along with edges and bin centers
-        return j, edges, bin_centers
+        return j, np.array(edges), np.array(bin_centers)
 
+    def get_turbulence_integral(self, pt, binning='c', nbins=7, layers=None):
+        '''
+        get an integrated Cn2 profile for dataset pt
+        '''
+        cn2, h = self.get_cn2(pt)
+
+        return self.integrate_cn2(cn2, h, binning=binning, nbins=nbins, layers=layers)
 
     def get_wind_interpolation(self, pt, h_out, kind='gp'):
         '''return interpolated winds for a dataset'''

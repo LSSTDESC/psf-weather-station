@@ -44,7 +44,7 @@ def process_gfs(gfs_df):
     # TO DO: take only non-daytime points
     # gfs_df = gfs_df.index[]
     not_daytime = gfs_df.index.hour!=12
-    gfs_df = gfs_df.iloc[not_daytime]
+    gfs_df = gfs_df.iloc[not_daytime].copy()
 
     gfs_df['u'] = [gfs_df['u'].values[i][::-1][:-5] for i in range(len(gfs_df))]
     gfs_df['v'] = [gfs_df['v'].values[i][::-1][:-5] for i in range(len(gfs_df))]
@@ -107,7 +107,7 @@ def gl_cn2(seeing='t'):
     cn2 = (a[seeing] * np.exp(-h/h0[seeing]) + b[seeing] * np.exp(-h/h1[seeing]))*1e-16
     return cn2, h/1000+2.73
 
-def integrate_cn2(cn2, h, edges, ground=2.73, maxh=25.9021124):
+def integrate_in_bins(cn2, h, edges, ground=2.73, maxh=25.9021124):
     '''
     integrate cn2 into altitude bins
     :cn2: cn2 values from model outputs
