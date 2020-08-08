@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 from scipy.interpolate import interp1d
 from sklearn import gaussian_process 
+from scipy.integrate import trapz
 
 def process_telemetry(telemetry_df):
     '''
@@ -87,6 +88,44 @@ def interpolate(x, y, new_x, kind):
         gp.fit(x.reshape(-1, 1), y.reshape(-1, 1))
         new_y = gp.predict(new_x.reshape(-1,1))
     return new_y
+
+def hufnagel(z, v):
+    '''calculte hufnagel Cn2. z in meters!'''
+    z = np.copy(z) + 2730
+    tmp1 = 2.2e-53 * z**10 * (v / 27)**2 * np.exp(-z * 1e-3)
+    tmp2 = 1e-16 * np.exp(-z * 1.5e-3)
+    return tmp1 + tmp2
+
+def gl_cn2(seeing='t'):
+    '''calculate the cn2 at ground according to Tokovinin 2004 model,
+    returns cn2 and associated altitudes (in km)'''
+    h = np.linspace(0,1000,100)
+    a = {'g': 70, 't': 70, 'b': 60}
+    b = {'g': 0.4, 't': 1.4, 'b': 2}
+    h0 = {'g': 15, 't': 20, 'b': 1000}
+    h1 = {'g': 700, 't': 900, 'b': 1500}
+    cn2 = (a[seeing] * np.exp(-h/h0[seeing]) + b[seeing] * np.exp(-h/h1[seeing]))*1e-16
+    return cn2, h/1000+2.73
+
+def integrate_cn2(cn2, h, edges, ground=2.73, maxh=25.9021124):
+    '''
+    integrate cn2 into altitude bins
+    :cn2: cn2 values from model outputs
+    :h: h values of the input cn2
+    '''
+    # make an equally spaced sampling in h across whole range:
+    h_samples = np.linspace(ground * 1000, maxh * 1000, 1000)
+
+    J=[]
+    for i in range(len(edges)-1):
+        # find the h samples that are within the altitude range of integration
+        h_i = h_samples[(h_samples<edges[i+1] * 1000) & (h_samples>edges[i] * 1000)]
+        # get Cn2 interpolation at those values of h
+        cn2_i = np.exp(interpolate(h * 1000, np.log(cn2), h_i, kind='cubic'))
+        # numerically integrate to find the J value for this bin
+        J.append(trapz(cn2_i, h_i))
+
+    return J
 
 def smooth_direction(directions):
     '''

@@ -68,12 +68,7 @@ class ParameterGenerator():
                           'u': matched_comps['u'], 'v': matched_comps['v']}
         self.gfs_winds = gfs_winds.loc[updated_gfs_dates]
 
-    def _calculate_cn2(self):
-        '''
-        use GFS winds and other models to calculate a Cn2 profile
-        '''
-
-    def get_wind_parameters(self, pt):
+    def get_raw_wind(self, pt):
         '''
         construct a vector of wind speed+direction vs altitude using GFS,
         till self.gfs_stop and matched telemetry 
@@ -95,23 +90,85 @@ class ParameterGenerator():
         return {'u': u, 'v': v, 'speed': speed, 
                 'direction': utils.smooth_direction(direction), 'h': height}
 
-    def draw_wind_parameters(self):
-        '''
-        randomly sample from the data
-        '''
-        pt = np.random.choice(range(len(self.gfs_winds)))
- 
-        return self.get_wind_parameters(pt)
-
-    def do_interpolation(self, p_dict, h_interp, kind='gp'):
+    def interpolate_wind(self, p_dict, h_out, kind='gp'):
         '''
         use matched data to interpolate 
         '''
-        new_u = utils.interpolate(p_dict['h'], p_dict['u'], h_interp, kind)
-        new_v = utils.interpolate(p_dict['h'], p_dict['v'], h_interp, kind)
+        new_u = utils.interpolate(p_dict['h'], p_dict['u'], h_out, kind)
+        new_v = utils.interpolate(p_dict['h'], p_dict['v'], h_out, kind)
 
         new_direction = utils.to_direction(new_v, new_u)
         return {'u': new_u, 'v': new_v, 'speed': np.hypot(new_u, new_v), 
-                'direction': utils.smooth_direction(new_direction), 'h': h_interp}
+                'direction': utils.smooth_direction(new_direction), 'h': h_out}
+
+    def get_cn2(self, pt):
+        '''
+        use GFS winds and other models to calculate a Cn2 profile
+        output is stacked Cn2 of hufnagel model and ground layer model
+        '''
+        huf_stop = 12
+        # find the z and wind speed that are valid for the hufnagel model
+        huf_h = self.gfs_h[huf_stop:] * 1000
+        huf_wind = self.gfs_wind.iloc[pt]['speed'][huf_stop:]
+        # calculate hufnagel cn2 for those
+        huf = utils.hufnagel(huf_h, huf_wind)
+        # get the ground layer cn2
+        gl, gl_h = utils.gl_cn2()
+
+        # return stacked hufnagel and ground layer profiles/altitudes
+        return np.hstack([gl, huf]), np.hstack([gl_h, huf_h])
+
+    def get_turbulence_integral(self, pt, binning='c', nbins=7, layers=None):
+        '''
+        get an integrated Cn2 profile 
+
+        :binning: how to define the bins for the integration, can be either 'log' for log spaced bins 
+        in altitude, or 'er' to follow the bin centers from ER 2000
+        :nbins: if binning=='log', this determines how many bins will be used
+        :layers: if binning=='custom' these must be specified and will be the bin centers
+        '''
+        maxh = max(self.gfs_h)
+        g = self.cp_ground
+
+        # define bins according to binning argument   
+        if binning == 'log':
+            n, edges = np.histogram(h_stack, bins=np.logspace(np.log10(g), np.log10(maxh), nbins))
+            bin_centers = [(edges[i+1]+edges[i])/2 for i in range(nbins-1)]
+        else: 
+            if binning == 'c':
+                bin_centers = [3, 6.41, 9.83, 11.94, 14.97, 18]
+            elif binning == 'er':
+                bin_centers = [i+g for i in [0,1.8,3.3, 5.8,7.4,13.1,15.8]]
+            elif binning == 'custom':
+                bin_centers = layers
+            edges = [g]+[np.mean(bin_centers[i:i+2]) for i in range(len(bin_centers)-1)]+[maxh]
+
+        # get cn2
+        cn2, h = self.get_cn2(pt)
+        # integrate cn2 in bins defined by edges
+        j = utils.integrate_cn2(cn2, h, edges, ground=g, maxh=maxh)
+        # return along with edges and bin centers
+        return j, edges, bin_centers
+
+
+    def get_wind_interpolation(self, pt, h_out, kind='gp'):
+        '''return interpolated winds for a dataset'''
+        wind_dict = self.get_raw_wind(pt)
+        return self.interpolate_wind(wind_dict, h_out, kind=kind)
+
+    def draw_parameters(self):
+        '''draw a random, full set of parameters. 
+        returns a dict of layers, wind params, and turbulence integrals '''
+
+        pt = np.random.choice(range(len(self.gfs_winds)))
+
+        j, _, layers = self.get_turbulence_integral(pt)
+        params = self.get_wind_interpolation(pt, layers)
+
+        params['j'] = j
+
+        return params
+
+
 
 
