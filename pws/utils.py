@@ -17,9 +17,12 @@ def process_telemetry(telemetry_df):
     for dframe in [tel_dir, tel_speed]:
         dframe.index = pd.to_datetime(dframe['dts'], utc=True)
 
-    nonzero = tel_speed.index[tel_speed['vals'] != 0]
-    cut = tel_speed.index[tel_speed['vals'] < 40]
-    cp_masks = {'speed': nonzero & cut, 'dir': tel_dir.index}
+    speed_mask = tel_speed.index[tel_speed['vals'].apply(lambda x: x!=0 and x<40)]
+    dir_mask = tel_dir.index[tel_dir['vals'].apply(lambda x: x!=0)]
+    # nonzero = tel_speed.index[tel_speed['vals'] != 0]
+    # cut = tel_speed.index[tel_speed['vals'] < 40]
+    # cp_masks = {'speed': nonzero & cut, 'dir': tel_dir.index}
+    cp_masks = {'speed': speed_mask, 'dir': tel_dir.index}
 
     return {'dir': tel_dir, 'speed': tel_speed}, cp_masks
 
