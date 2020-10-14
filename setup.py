@@ -2,14 +2,13 @@ from setuptools import setup
 
 
 setup(
-    name='psf-weather-station',
+    name='psfws',
     version='0.1',
-    description='generate realistic atmospheric input parameters for point-spread function simulations',
+    description='generate realistic wind and turbulence parameters for atmospheric point-spread function simulations',
     url='http://github.com/cahebert/psf-weather-station',
-    author='claire',
+    author='Claire-Alice Hebert',
     author_email='chebert@stanford.edu',
     license='MIT',
-    packages=['pws'],
-    python_requires='>=3.5',
-    zip_safe=False
+    # packages=['psfws'],
+    python_requires='>=3.5'
 )
