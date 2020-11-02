@@ -2,7 +2,7 @@ import numpy as np
 import pickle
 import pandas as pd
 import pathlib
-from pws import utils
+from psfws import utils
 
 class ParameterGenerator():
     '''
@@ -145,7 +145,7 @@ class ParameterGenerator():
             bin_centers = [(edges[i+1]+edges[i])/2 for i in range(nbins-1)]
         else: 
             if binning == 'c':
-                bin_centers = [3, 6.41, 9.83, 11.94, 14.97, 18]
+                bin_centers = [2.85, 6.41, 9.83, 11.94, 14.97, 18]
             elif binning == 'er':
                 bin_centers = [i+g for i in [0,1.8,3.3, 5.8,7.4,13.1,15.8]]
             elif binning == 'custom':
