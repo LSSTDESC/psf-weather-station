@@ -170,11 +170,12 @@ class ParameterGenerator():
         wind_dict = self.get_raw_wind(pt)
         return self.interpolate_wind(wind_dict, h_out, kind=kind)
 
-    def draw_parameters(self):
+    def draw_parameters(self, seed=None):
         '''draw a random, full set of parameters. 
         returns a dict of layers, wind params, and turbulence integrals '''
 
-        pt = np.random.choice(range(len(self.gfs_winds)))
+        rng = np.random.RandomState(seed=seed)
+        pt = rng.choice(range(len(self.gfs_winds)))
 
         j, _, layers = self.get_turbulence_integral(pt)
         params = self.get_wind_interpolation(pt, layers)
