@@ -4,24 +4,24 @@ from scipy.interpolate import interp1d
 from sklearn import gaussian_process 
 from scipy.integrate import trapz
 
-def process_telemetry(telemetry_df):
+def process_telemetry(telemetry_df, rng=None):
     '''
     input: telemetry object
     returns 
     - a dict holding a dataframe each for wind directions and speeds
     - a dict with masks for each of the above dfs
     '''
-    tel_dir = pd.DataFrame(telemetry_df['WindDir_twr']).sample(n=20_000)
-    tel_speed = pd.DataFrame(telemetry_df['WindSpd_twr']).sample(n=20_000)
+    # subsample because there far more telemetry than GFS data and storing it all is s.l.o.w.
+    tel_dir = pd.DataFrame(telemetry_df['WindDir_twr']).sample(n=20_000, 
+                                                               random_state=rng.integers(low=0,high=1e6))
+    tel_speed = pd.DataFrame(telemetry_df['WindSpd_twr']).sample(n=20_000, 
+                                                                 random_state=rng.integers(low=0,high=1e6))
 
     for dframe in [tel_dir, tel_speed]:
         dframe.index = pd.to_datetime(dframe['dts'], utc=True)
 
     speed_mask = tel_speed.index[tel_speed['vals'].apply(lambda x: x!=0 and x<40)]
     dir_mask = tel_dir.index[tel_dir['vals'].apply(lambda x: x!=0)]
-    # nonzero = tel_speed.index[tel_speed['vals'] != 0]
-    # cut = tel_speed.index[tel_speed['vals'] < 40]
-    # cp_masks = {'speed': nonzero & cut, 'dir': tel_dir.index}
     cp_masks = {'speed': speed_mask, 'dir': tel_dir.index}
 
     return {'dir': tel_dir, 'speed': tel_speed}, cp_masks
@@ -44,8 +44,6 @@ def process_gfs(gfs_df):
     - u and v altitudes reversed
     - new "speed" and "dir" columns added
     '''
-    # TO DO: take only non-daytime points
-    # gfs_df = gfs_df.index[]
     not_daytime = gfs_df.index.hour!=12
     gfs_df = gfs_df.iloc[not_daytime].copy()
 

@@ -9,7 +9,9 @@ class ParameterGenerator():
     class object to generate realistic atmospheric input parameters required for GalSim simulation.
     uses NOAA GFS predictions matched with telemetry from Cerro Pachon.
     '''
-    def __init__(self, gfs_file='data/gfswinds_cp_20190501-20191031.pkl', gfs_h_file='data/H.npy',
+    def __init__(self, seed=None,
+                 gfs_file='data/gfswinds_cp_20190501-20191031.pkl', 
+                 gfs_h_file='data/H.npy',
                  telemetry_file='data/cptelemetry_20190501-20191101.pkl', 
                  pkg_home='/Users/clairealice/Documents/repos/psf-weather-station'):
         # define path using pathlib -- is there a way to not do this manually? 
@@ -33,6 +35,8 @@ class ParameterGenerator():
         self.gfs_stop = 10
         self.cp_ground = (2715 + 50) / 1000
 
+        self.rng = np.random.default_rng(seed)
+
         self._match_data()
 
     def _load_data(self):
@@ -45,7 +49,7 @@ class ParameterGenerator():
         self.gfs_h = np.load(open(self.gfs_h_f, 'rb'))[::-1] / 1000
 
         telemetry = pickle.load(open(self.tel_f, 'rb'))
-        telemetry, tel_masks = utils.process_telemetry(telemetry)
+        telemetry, tel_masks = utils.process_telemetry(telemetry, self.rng)
 
         return gfs_winds, telemetry, tel_masks
 
@@ -170,12 +174,10 @@ class ParameterGenerator():
         wind_dict = self.get_raw_wind(pt)
         return self.interpolate_wind(wind_dict, h_out, kind=kind)
 
-    def draw_parameters(self, seed=None):
+    def draw_parameters(self):
         '''draw a random, full set of parameters. 
         returns a dict of layers, wind params, and turbulence integrals '''
-
-        rng = np.random.RandomState(seed=seed)
-        pt = rng.choice(range(len(self.gfs_winds)))
+        pt = self.rng.integers(low=0,high=len(self.gfs_winds))
 
         j, _, layers = self.get_turbulence_integral(pt)
         params = self.get_wind_interpolation(pt, layers)
