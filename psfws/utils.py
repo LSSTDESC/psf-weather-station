@@ -4,24 +4,20 @@ from scipy.interpolate import interp1d
 from sklearn import gaussian_process 
 from scipy.integrate import trapz
 
-def process_telemetry(telemetry_df, rng=None):
+def process_telemetry(telemetry, rng=None):
     '''
-    input: telemetry object
+    input: 
+    - dictionary holding two pandas Series of wind speed/direction measurements
     returns 
     - a dict holding a dataframe each for wind directions and speeds
     - a dict with masks for each of the above dfs
     '''
-    # subsample because there far more telemetry than GFS data and storing it all is s.l.o.w.
-    tel_dir = pd.DataFrame(telemetry_df['WindDir_twr']).sample(n=20_000, 
-                                                               random_state=rng.integers(low=0,high=1e6))
-    tel_speed = pd.DataFrame(telemetry_df['WindSpd_twr']).sample(n=20_000, 
-                                                                 random_state=rng.integers(low=0,high=1e6))
+    tel_dir = telemetry['wind_direction']
+    tel_speed = telemetry['wind_speed']
 
-    for dframe in [tel_dir, tel_speed]:
-        dframe.index = pd.to_datetime(dframe['dts'], utc=True)
-
-    speed_mask = tel_speed.index[tel_speed['vals'].apply(lambda x: x!=0 and x<40)]
-    dir_mask = tel_dir.index[tel_dir['vals'].apply(lambda x: x!=0)]
+    # find masks for telemetry values that are zero or, for speeds, >40
+    speed_mask = tel_speed.index[tel_speed.apply(lambda x: x!=0 and x<40)]
+    dir_mask = tel_dir.index[tel_dir.apply(lambda x: x!=0)]
     cp_masks = {'speed': speed_mask, 'dir': tel_dir.index}
 
     return {'dir': tel_dir, 'speed': tel_speed}, cp_masks
@@ -71,8 +67,8 @@ def match_telemetry(speed, direction, gfs_dates):
     
     ids_to_keep = [i for i in range(n_gfs) if len(speed_ids[i])!=0 and len(dir_ids[i])!=0]
     
-    matched_s = [np.median(speed.loc[speed_ids[i]]['vals']) for i in range(n_gfs) if i in ids_to_keep]
-    matched_d = [np.median(direction.loc[dir_ids[i]]['vals']) for i in range(n_gfs) if i in ids_to_keep]
+    matched_s = [np.median(speed.loc[speed_ids[i]]) for i in range(n_gfs) if i in ids_to_keep]
+    matched_d = [np.median(direction.loc[dir_ids[i]]) for i in range(n_gfs) if i in ids_to_keep]
 
     return np.array(matched_s), np.array(matched_d), gfs_dates[ids_to_keep]
 
