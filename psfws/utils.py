@@ -4,7 +4,7 @@ from scipy.interpolate import interp1d
 from sklearn import gaussian_process 
 from scipy.integrate import trapz
 
-def process_telemetry(telemetry, rng=None):
+def process_telemetry(telemetry):
     '''
     input: 
     - dictionary holding two pandas Series of wind speed/direction measurements
@@ -104,14 +104,14 @@ def gl_cn2(seeing='t'):
     cn2 = (a[seeing] * np.exp(-h/h0[seeing]) + b[seeing] * np.exp(-h/h1[seeing]))*1e-16
     return cn2, h/1000+2.73
 
-def integrate_in_bins(cn2, h, edges, ground=2.73, maxh=25.9021124):
+def integrate_in_bins(cn2, h, edges):
     '''
     integrate cn2 into altitude bins
     :cn2: cn2 values from model outputs
     :h: h values of the input cn2
     '''
     # make an equally spaced sampling in h across whole range:
-    h_samples = np.linspace(ground * 1000, maxh * 1000, 1000)
+    h_samples = np.linspace(edges[0] * 1000, edges[-1] * 1000, 1000)
 
     J=[]
     for i in range(len(edges)-1):

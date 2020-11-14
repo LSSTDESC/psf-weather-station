@@ -9,10 +9,11 @@ class ParameterGenerator():
     class object to generate realistic atmospheric input parameters required for GalSim simulation.
     uses NOAA GFS predictions matched with telemetry from Cerro Pachon.
     '''
-    def __init__(self, seed=None,
+    def __init__(self, seed=None, 
+                 date_range=['2019-05-01', '2019-10-31'],
                  gfs_file='data/gfswinds_cp_20190501-20191031.pkl', 
                  gfs_h_file='data/H.npy',
-                 telemetry_file='data/cptelemetry_20190501-20191101.pkl', 
+                 telemetry_file='data/tel_dict_CP_20190501-20191101.pkl', 
                  pkg_home='/Users/clairealice/Documents/repos/psf-weather-station'):
         # define path using pathlib -- is there a way to not do this manually? 
         # not sure what I'm looking for exactly 
@@ -33,11 +34,11 @@ class ParameterGenerator():
 
         # altitude info
         self.gfs_stop = 10
-        self.cp_ground = (2715 + 50) / 1000
+        self.h0 = (2715 + 50) / 1000
 
         self.rng = np.random.default_rng(seed)
 
-        self._match_data()
+        self._match_data(date_range)
 
     def _load_data(self):
         '''
@@ -46,10 +47,10 @@ class ParameterGenerator():
         gfs_winds = pickle.load(open(self.gfs_f, 'rb'))
         gfs_winds = utils.process_gfs(gfs_winds)
 
-        self.gfs_h = np.load(open(self.gfs_h_f, 'rb'))[::-1] / 1000
+        self.h_gfs = np.load(open(self.gfs_h_f, 'rb'))[::-1] / 1000
 
         telemetry = pickle.load(open(self.tel_f, 'rb'))
-        telemetry, tel_masks = utils.process_telemetry(telemetry, self.rng)
+        telemetry, tel_masks = utils.process_telemetry(telemetry)
 
         return gfs_winds, telemetry, tel_masks
 
@@ -91,7 +92,7 @@ class ParameterGenerator():
         v = np.hstack([self.telemetry['v'][pt],
                        self.gfs_winds.iloc[pt]['v'][self.gfs_stop:]])
 
-        height = np.hstack([self.cp_ground, self.gfs_h[self.gfs_stop:]])
+        height = np.hstack([self.h0, self.h_gfs[self.gfs_stop:]])
 
         return {'u': u, 'v': v, 'speed': speed, 
                 'direction': utils.smooth_direction(direction), 'h': height}
@@ -114,15 +115,15 @@ class ParameterGenerator():
         '''
         huf_stop = 12
         # find the z and wind speed that are valid for the hufnagel model
-        huf_h = self.gfs_h[huf_stop:] * 1000
+        h_huf = self.h_gfs[huf_stop:] * 1000
         huf_wind = self.gfs_winds.iloc[pt]['speed'][huf_stop:]
         # calculate hufnagel cn2 for those
-        huf = utils.hufnagel(huf_h, huf_wind)
+        huf = utils.hufnagel(h_huf, huf_wind)
         # get the ground layer cn2
         gl, gl_h = utils.gl_cn2()
 
         # return stacked hufnagel and ground layer profiles/altitudes
-        return np.hstack([gl, huf]), np.hstack([gl_h, huf_h / 1000])
+        return np.hstack([gl, huf]), np.hstack([gl_h, h_huf / 1000])
 
     def get_cn2_all(self):
         '''get array of cn2 values for the whole dataset'''
@@ -132,54 +133,68 @@ class ParameterGenerator():
             cn2_list.append(cn2)
         return np.array(cn2_list)
 
-    def integrate_cn2(self, cn2, h, binning='c', nbins=7, layers=None):
+    def _get_auto_layers(self):
+        '''calculate placement of layers in the atmosphere according to the ground, 
+        max wind speed, max turbulence, etc'''
+        maxh = max(self.h_gfs)
+        temp_h = np.linspace(self.h0, maxh, 1000)
+
+        # interpolate the median speeds from GFS to find height of max
+        median_spd = np.median(self.gfs_winds['speed'], axis=0)
+        median_spd_smooth = utils.interpolate(self.h_gfs, median_spd, temp_h, kind='cubic')
+        h_max_spd = temp_h[np.argmax(median_spd_smooth)]
+
+        # interpolat the median cn2 to find height of max
+        median_cn2 = np.median(self.get_cn2_all(), axis=0)
+        _, cn2_h = self.get_cn2(1)
+        median_cn2_smooth = utils.interpolate(cn2_h, median_cn2, temp_h, kind='cubic')
+        h_max_cn2 = temp_h[np.argmax(median_cn2_smooth)]
+
+        # sort the heights of max speed and max turbulence
+        h3, h4 = np.sort([h_max_spd, h_max_cn2])
+
+        return [self.h0, np.mean([self.h0,h3]), h3, h4, np.mean([h4,maxh]), maxh]
+
+    def integrate_cn2(self, cn2, h, layers='auto'):
         '''
         get an integrated Cn2 profile 
-        :binning: how to define the bins for the integration, can be either 'log' for log spaced bins 
-        in altitude, or 'er' to follow the bin centers from ER 2000
-        :nbins: if binning=='log', this determines how many bins will be used
-        :layers: if binning=='custom' these must be specified and will be the bin centers
+        :layers: how to define the bins for the integration. 'er' to follow the bin centers from ER 2000,
         '''
-        maxh = max(self.gfs_h)
-        g = self.cp_ground
-
-        # define bins according to binning argument   
-        if binning == 'log':
-            n, edges = np.histogram(h_stack, bins=np.logspace(np.log10(g), np.log10(maxh), nbins))
-            bin_centers = [(edges[i+1]+edges[i])/2 for i in range(nbins-1)]
-        else: 
-            if binning == 'c':
-                bin_centers = [2.85, 6.41, 9.83, 11.94, 14.97, 18]
-            elif binning == 'er':
-                bin_centers = [i+g for i in [0,1.8,3.3, 5.8,7.4,13.1,15.8]]
-            elif binning == 'custom':
-                bin_centers = layers
-            edges = [g]+[np.mean(bin_centers[i:i+2]) for i in range(len(bin_centers)-1)]+[maxh]
+        maxh = max(self.h_gfs)
+        
+        # define bins according to layers argument   
+        if layers == 'auto':
+            bin_centers = self._get_auto_layers()
+        elif layers == 'er':
+            bin_centers = [i+self.h0 for i in [0,1.8,3.3, 5.8,7.4,13.1,15.8]]
+        elif type(layers) == list:
+            bin_centers = layers
+        edges = [self.h0]+[np.mean(bin_centers[i:i+2]) for i in range(len(bin_centers)-1)]+[maxh]
 
         # integrate cn2 in bins defined by these edges
-        j = utils.integrate_in_bins(cn2, h, edges, ground=g, maxh=maxh)
+        j = utils.integrate_in_bins(cn2, h, edges)
         # return along with edges and bin centers
         return j, np.array(edges), np.array(bin_centers)
 
-    def get_turbulence_integral(self, pt, binning='c', nbins=7, layers=None):
+    def get_turbulence_integral(self, pt, layers='auto'):
         '''
         get an integrated Cn2 profile for dataset pt
         '''
         cn2, h = self.get_cn2(pt)
 
-        return self.integrate_cn2(cn2, h, binning=binning, nbins=nbins, layers=layers)
+        return self.integrate_cn2(cn2, h, layers=layers)
 
     def get_wind_interpolation(self, pt, h_out, kind='gp'):
         '''return interpolated winds for a dataset'''
         wind_dict = self.get_raw_wind(pt)
         return self.interpolate_wind(wind_dict, h_out, kind=kind)
 
-    def draw_parameters(self):
+    def draw_parameters(self, layers='auto'):
         '''draw a random, full set of parameters. 
         returns a dict of layers, wind params, and turbulence integrals '''
         pt = self.rng.integers(low=0,high=len(self.gfs_winds))
 
-        j, _, layers = self.get_turbulence_integral(pt)
+        j, _, layers = self.get_turbulence_integral(pt, layers='auto')
         params = self.get_wind_interpolation(pt, layers)
 
         params['j'] = j
