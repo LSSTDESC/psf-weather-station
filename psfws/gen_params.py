@@ -136,24 +136,27 @@ class ParameterGenerator():
     def _get_auto_layers(self):
         '''calculate placement of layers in the atmosphere according to the ground, 
         max wind speed, max turbulence, etc'''
-        maxh = max(self.h_gfs)
-        temp_h = np.linspace(self.h0, maxh, 1000)
+        maxh = 18.
+        temp_h = np.linspace(self.h0, max(self.h_gfs), 1000)
 
         # interpolate the median speeds from GFS to find height of max
-        median_spd = np.median(self.gfs_winds['speed'], axis=0)
+        median_spd = np.median([i for i in self.gfs_winds['speed'].values], axis=0)
         median_spd_smooth = utils.interpolate(self.h_gfs, median_spd, temp_h, kind='cubic')
         h_max_spd = temp_h[np.argmax(median_spd_smooth)]
 
-        # interpolat the median cn2 to find height of max
+        # interpolate the median cn2 to find height of max
         median_cn2 = np.median(self.get_cn2_all(), axis=0)
         _, cn2_h = self.get_cn2(1)
         median_cn2_smooth = utils.interpolate(cn2_h, median_cn2, temp_h, kind='cubic')
-        h_max_cn2 = temp_h[np.argmax(median_cn2_smooth)]
+        h_max_cn2 = temp_h[100:][np.argmax(median_cn2_smooth[100:])] # find max in mid-atm, not ground
 
         # sort the heights of max speed and max turbulence
         h3, h4 = np.sort([h_max_spd, h_max_cn2])
 
-        return [self.h0, np.mean([self.h0,h3]), h3, h4, np.mean([h4,maxh]), maxh]
+        # raise the lowest layer slightly off of the ground
+        lowest = self.h0 + 0.250
+
+        return [lowest, np.mean([lowest,h3]), h3, h4, np.mean([h4,maxh]), maxh]
 
     def integrate_cn2(self, cn2, h, layers='auto'):
         '''
