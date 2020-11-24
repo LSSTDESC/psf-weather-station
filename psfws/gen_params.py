@@ -9,7 +9,7 @@ class ParameterGenerator():
     class object to generate realistic atmospheric input parameters required for GalSim simulation.
     uses NOAA GFS predictions matched with telemetry from Cerro Pachon.
     '''
-    def __init__(self, seed=None, 
+    def __init__(self, seed=None, location='cerro-pachon',
                  date_range=['2019-05-01', '2019-10-31'],
                  gfs_file='data/gfswinds_cp_20190501-20191031.pkl', 
                  gfs_h_file='data/H.npy',
@@ -32,12 +32,15 @@ class ParameterGenerator():
         if not self.tel_f.is_file():
             raise FileNotFoundError(f'file {self.tel_f} not found!')
 
-        # altitude info
-        self.gfs_stop = 10
-        self.h0 = (2715 + 50) / 1000
-
         self.rng = np.random.default_rng(seed)
 
+        # set location specific quantities like ground height and ground layer turbulence
+        self.h0, self.cn2_gl, self.h_gl = utils.initalize_location(location)
+
+        # set index for lowest GFS data to use according to observatory height:
+        # don't use anything lower than 1km above ground
+        self.gfs_stop = max([10,np.where(self.h_gfs>self.h0+1)[0][0]])
+        
         self._match_data(date_range)
 
     def _load_data(self):
@@ -78,7 +81,7 @@ class ParameterGenerator():
     def get_raw_wind(self, pt):
         '''
         construct a vector of wind speed+direction vs altitude using GFS,
-        till self.gfs_stop and matched telemetry 
+        till self.gfs_stop, and matched telemetry 
         '''
         speed = np.hstack([self.telemetry['speed'][pt],
                            self.gfs_winds.iloc[pt]['speed'][self.gfs_stop:]])
@@ -113,17 +116,19 @@ class ParameterGenerator():
         use GFS winds and other models to calculate a Cn2 profile
         output is stacked Cn2 of hufnagel model and ground layer model
         '''
-        huf_stop = 12
+        huf_stop = np.where(self.h_gfs>self.h0+3)[0][0]
+
+        # change: should use the interpolated wind to calculate the cn2, and then
+        # can get as much cn2 as possible?
+
         # find the z and wind speed that are valid for the hufnagel model
         h_huf = self.h_gfs[huf_stop:] * 1000
         huf_wind = self.gfs_winds.iloc[pt]['speed'][huf_stop:]
         # calculate hufnagel cn2 for those
         huf = utils.hufnagel(h_huf, huf_wind)
-        # get the ground layer cn2
-        gl, gl_h = utils.gl_cn2()
 
         # return stacked hufnagel and ground layer profiles/altitudes
-        return np.hstack([gl, huf]), np.hstack([gl_h, h_huf / 1000])
+        return np.hstack([self.cn2_gl, huf]), np.hstack([self.h_gl, h_huf / 1000])
 
     def get_cn2_all(self):
         '''get array of cn2 values for the whole dataset'''

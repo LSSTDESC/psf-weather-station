@@ -4,6 +4,39 @@ from scipy.interpolate import interp1d
 from sklearn import gaussian_process 
 from scipy.integrate import trapz
 
+
+def initialize_location(location):
+    '''given telescope identifier, return ground altitude and ground cn2 parameters?'''
+
+    # for custom usage: input a dict with keys 'altitude', 'ground_cn2', and 'cn2_heights'
+    # altitude and cn2_heights in units of km, and both measured relative to sea level 
+    if type(location) == dict:
+        h0 = location['altitude']
+        gl_cn2 = location['ground_cn2']
+        h_gl = location['cn2_heights']
+
+    # for defaults, specify which observatory location to use. ground altitudes defined here
+    # and the ground layer cn2 models will for now default to the Cerro Pachon values
+    else:
+        ground_altitude = {'cerro-pachon':2.715, 'mauna-kea':4.2, 
+                           'cerro-telolo':2.2, 'la-palma':2.4}
+        h0 = ground_altitude[location]
+        gl_cn2, h_gl = cerro_pachon_gl_cn2()
+        h_gl += h0
+        
+    return h0, gl_cn2, h_gl
+
+def cerro_pachon_gl_cn2():
+    '''calculate the cn2 at ground according to Tokovinin 2004 model,
+    returns cn2 and associated altitudes (in km)'''
+    h = np.linspace(0,1000,100) # these are in meters
+    a = 70
+    b = 1.4
+    h0 = 20
+    h1 = 900
+    cn2 = (a * np.exp(-h/h0) + b * np.exp(-h/h1))*1e-16
+    return cn2, h/1000 #return h in km
+
 def process_telemetry(telemetry):
     '''
     input: 
@@ -92,17 +125,6 @@ def hufnagel(z, v):
     tmp1 = 2.2e-53 * z**10 * (v / 27)**2 * np.exp(-z * 1e-3)
     tmp2 = 1e-16 * np.exp(-z * 1.5e-3)
     return tmp1 + tmp2
-
-def gl_cn2(seeing='t'):
-    '''calculate the cn2 at ground according to Tokovinin 2004 model,
-    returns cn2 and associated altitudes (in km)'''
-    h = np.linspace(0,1000,100)
-    a = {'g': 70, 't': 70, 'b': 60}
-    b = {'g': 0.4, 't': 1.4, 'b': 2}
-    h0 = {'g': 15, 't': 20, 'b': 1000}
-    h1 = {'g': 700, 't': 900, 'b': 1500}
-    cn2 = (a[seeing] * np.exp(-h/h0[seeing]) + b[seeing] * np.exp(-h/h1[seeing]))*1e-16
-    return cn2, h/1000+2.73
 
 def integrate_in_bins(cn2, h, edges):
     '''
