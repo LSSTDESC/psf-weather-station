@@ -8,29 +8,23 @@ class ParameterGenerator():
     '''
     class object to generate realistic atmospheric input parameters required for GalSim simulation.
     uses NOAA GFS predictions matched with telemetry from Cerro Pachon.
+    file paths should be relative to package directory psf-weather-station
     '''
     def __init__(self, seed=None, location='cerro-pachon',
                  date_range=['2019-05-01', '2019-10-31'],
                  gfs_file='data/gfswinds_cp_20190501-20191031.pkl', 
                  gfs_h_file='data/H.npy',
-                 telemetry_file='data/tel_dict_CP_20190501-20191101.pkl', 
-                 pkg_home='/Users/clairealice/Documents/repos/psf-weather-station'):
-        # define path using pathlib -- is there a way to not do this manually? 
-        # not sure what I'm looking for exactly 
-        self.p = pathlib.Path(pkg_home)
+                 telemetry_file='data/tel_dict_CP_20190501-20191101.pkl'):
+
+        psfws_base = pathlib.Path(__file__).parents[1].absolute()
+        self._file_paths = {'gfs_data': pathlib.Path.joinpath(psfws_base, gfs_file),
+                            'gfs_alts': pathlib.Path.joinpath(psfws_base, gfs_h_file),
+                            'telemetry': pathlib.Path.joinpath(psfws_base, telemetry_file)}
         
-        # check that the pointed data files exist:
-        self.gfs_f = self.p / pathlib.Path(gfs_file)
-        if not self.gfs_f.is_file():
-            raise FileNotFoundError(f'file {self.gfs_f} not found!')
-
-        self.gfs_h_f = self.p / pathlib.Path(gfs_h_file)
-        if not self.gfs_h_f.is_file():
-            raise FileNotFoundError(f'file {self.gfs_h_f} not found!')
-
-        self.tel_f = self.p / pathlib.Path(telemetry_file)
-        if not self.tel_f.is_file():
-            raise FileNotFoundError(f'file {self.tel_f} not found!')
+        # check that the data files exist:
+        for file_path in self._file_paths
+            if not file_path.is_file():
+                raise FileNotFoundError(f'file {file_path} not found!')
 
         self.rng = np.random.default_rng(seed)
 
@@ -47,12 +41,12 @@ class ParameterGenerator():
         '''
         load pickle file of GFS winds and store in class
         '''
-        gfs_winds = pickle.load(open(self.gfs_f, 'rb'))
+        gfs_winds = pickle.load(open(self._file_paths['gfs_data'], 'rb'))
         gfs_winds = utils.process_gfs(gfs_winds)
 
-        self.h_gfs = np.load(open(self.gfs_h_f, 'rb'))[::-1] / 1000
+        self.h_gfs = np.load(open(self._file_paths['gfs_alts'], 'rb'))[::-1] / 1000
 
-        telemetry = pickle.load(open(self.tel_f, 'rb'))
+        telemetry = pickle.load(open(self._file_paths['telemetry'], 'rb'))
         telemetry, tel_masks = utils.process_telemetry(telemetry)
 
         return gfs_winds, telemetry, tel_masks
@@ -116,9 +110,6 @@ class ParameterGenerator():
         use GFS winds and other models to calculate a Cn2 profile
         output is stacked Cn2 of hufnagel model and ground layer model
         '''
-        # change: should use the interpolated wind to calculate the cn2, and then
-        # can get as much cn2 as possible?
-        
         # pick out relevant wind data 
         raw_winds = self.get_raw_wind(pt)
 
@@ -129,7 +120,7 @@ class ParameterGenerator():
         # calculate hufnagel cn2 for those
         huf = utils.hufnagel(h_huf, speed_huf)
 
-        # # find the z and wind speed that are valid for the hufnagel model
+        # # old: find the z and wind speed that are valid for the hufnagel model
         # h_huf = self.h_gfs[huf_stop:] * 1000
         # speed_huf = self.gfs_winds.iloc[pt]['speed'][huf_stop:]
         
@@ -162,14 +153,17 @@ class ParameterGenerator():
         h_max_cn2 = temp_h[100:][np.argmax(median_cn2_smooth[100:])] # find max in mid-atm, not ground
 
         # sort the heights of max speed and max turbulence
-        h3, h4 = np.sort([h_max_spd, h_max_cn2])
+        h4, h5 = np.sort([h_max_spd, h_max_cn2])
 
         # raise the lowest layer slightly off of the ground
         lowest = self.h0 + 0.250
 
-        return [lowest, np.mean([lowest,h3]), h3, h4, np.mean([h4,maxh]), maxh]
+        h3 = np.mean([lowest,h4])
+        h6 = np.mean([h5,maxh])
 
-    def integrate_cn2(self, cn2, h, layers='auto'):
+        return [lowest, h3, h4, h5, h6, maxh]
+
+    def _integrate_cn2(self, cn2, h, layers='auto'):
         '''
         get an integrated Cn2 profile 
         :layers: how to define the bins for the integration. 'er' to follow the bin centers from ER 2000,
@@ -196,7 +190,7 @@ class ParameterGenerator():
         '''
         cn2, h = self.get_cn2(pt)
 
-        return self.integrate_cn2(cn2, h, layers=layers)
+        return self._integrate_cn2(cn2, h, layers=layers)
 
     def get_wind_interpolation(self, pt, h_out, kind='gp'):
         '''return interpolated winds for a dataset'''
