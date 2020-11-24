@@ -116,17 +116,23 @@ class ParameterGenerator():
         use GFS winds and other models to calculate a Cn2 profile
         output is stacked Cn2 of hufnagel model and ground layer model
         '''
-        huf_stop = np.where(self.h_gfs>self.h0+3)[0][0]
-
         # change: should use the interpolated wind to calculate the cn2, and then
         # can get as much cn2 as possible?
+        
+        # pick out relevant wind data 
+        raw_winds = self.get_raw_wind(pt)
 
-        # find the z and wind speed that are valid for the hufnagel model
-        h_huf = self.h_gfs[huf_stop:] * 1000
-        huf_wind = self.gfs_winds.iloc[pt]['speed'][huf_stop:]
+        # make a vector of heights where hufnagel will be valid
+        h_huf = np.linspace(self.h0 + 3, max(self.h_gfs), 100) * 1000 # to km
+        # interpolate wind data to those heights
+        speed_huf = self.interpolate_wind(raw_winds, h_huf)['speed']
         # calculate hufnagel cn2 for those
-        huf = utils.hufnagel(h_huf, huf_wind)
+        huf = utils.hufnagel(h_huf, speed_huf)
 
+        # # find the z and wind speed that are valid for the hufnagel model
+        # h_huf = self.h_gfs[huf_stop:] * 1000
+        # speed_huf = self.gfs_winds.iloc[pt]['speed'][huf_stop:]
+        
         # return stacked hufnagel and ground layer profiles/altitudes
         return np.hstack([self.cn2_gl, huf]), np.hstack([self.h_gl, h_huf / 1000])
 
