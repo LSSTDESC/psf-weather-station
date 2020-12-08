@@ -8,34 +8,26 @@ from scipy.integrate import trapz
 def initialize_location(location):
     '''given telescope identifier, return ground altitude and ground cn2 parameters?'''
 
-    # for custom usage: input a dict with keys 'altitude', 'ground_cn2', and 'cn2_heights'
-    # altitude and cn2_heights in units of km, and both measured relative to sea level 
+    # custom usage: input dict with key 'altitude', value in km, relative to sea level
+    # and 'height' keyword for telescope height, in m
     if type(location) == dict:
         h0 = location['altitude']
-        gl_cn2 = location['ground_cn2']
-        h_gl = location['cn2_heights']
+        h_tel = location['height']
 
-    # for defaults, specify which observatory location to use. ground altitudes defined here
-    # and the ground layer cn2 models will for now default to the Cerro Pachon values
+    # for defaults, specify which observatory location to use. 
     else:
         ground_altitude = {'cerro-pachon':2.715, 'mauna-kea':4.2, 
                            'cerro-telolo':2.2, 'la-palma':2.4}
         h0 = ground_altitude[location]
-        gl_cn2, h_gl = cerro_pachon_gl_cn2()
-        h_gl += h0
+        h_tel = 8 #complete guess...
         
-    return h0, gl_cn2, h_gl
+    return h0, h_tel/1000
 
-def cerro_pachon_gl_cn2():
-    '''calculate the cn2 at ground according to Tokovinin 2004 model,
-    returns cn2 and associated altitudes (in km)'''
-    h = np.linspace(0,1000,100) # these are in meters
-    a = 70
-    b = 1.4
-    h0 = 20
-    h1 = 900
-    cn2 = (a * np.exp(-h/h0) + b * np.exp(-h/h1))*1e-16
-    return cn2, h/1000 #return h in km
+def ground_cn2_model(params, h):
+    '''power law model for Cn2 as a function of height, given dict of parameters. 
+    parameters are amplitude A and power p'''
+    logcn2 = params['A'] + params['p'] * np.log10(h)
+    return 10**(logcn2)
 
 def process_telemetry(telemetry):
     '''
@@ -120,8 +112,10 @@ def interpolate(x, y, new_x, kind):
     return new_y
 
 def hufnagel(z, v):
-    '''calculte hufnagel Cn2. z in meters!'''
-    z = np.copy(z) + 2730
+    '''calculte hufnagel Cn2. input z in km, v in m/s'''
+    if np.min(z) < 3:
+        raise ValueError('hufnagel model only valid for height>3km')
+    z = np.copy(z) * 1000 # to km
     tmp1 = 2.2e-53 * z**10 * (v / 27)**2 * np.exp(-z * 1e-3)
     tmp2 = 1e-16 * np.exp(-z * 1.5e-3)
     return tmp1 + tmp2

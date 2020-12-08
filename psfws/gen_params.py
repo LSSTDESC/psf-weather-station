@@ -10,7 +10,7 @@ class ParameterGenerator():
     uses NOAA GFS predictions matched with telemetry from Cerro Pachon.
     file paths should be relative to package directory psf-weather-station
     '''
-    def __init__(self, seed=None, location='cerro-pachon',
+    def __init__(self, location='cerro-pachon', seed=None,
                  date_range=['2019-05-01', '2019-10-31'],
                  gfs_file='data/gfswinds_cp_20190501-20191031.pkl', 
                  gfs_h_file='data/H.npy',
@@ -22,20 +22,21 @@ class ParameterGenerator():
                             'telemetry': pathlib.Path.joinpath(psfws_base, telemetry_file)}
         
         # check that the data files exist:
-        for file_path in self._file_paths
+        for file_path in self._file_paths.values():
             if not file_path.is_file():
                 raise FileNotFoundError(f'file {file_path} not found!')
 
         self.rng = np.random.default_rng(seed)
 
-        # set location specific quantities like ground height and ground layer turbulence
-        self.h0, self.cn2_gl, self.h_gl = utils.initalize_location(location)
+        # set ground height (location specific) and telescope height
+        self.h0, self.h_tel = utils.initialize_location(location)
+        
+        # load and match GFS/telemetry data
+        self._match_data(date_range)
 
         # set index for lowest GFS data to use according to observatory height:
         # don't use anything lower than 1km above ground
-        self.gfs_stop = max([10,np.where(self.h_gfs>self.h0+1)[0][0]])
-        
-        self._match_data(date_range)
+        self.gfs_stop = max([10, np.where(self.h_gfs > self.h0 + 1)[0][0]])
 
     def _load_data(self):
         '''
@@ -44,7 +45,8 @@ class ParameterGenerator():
         gfs_winds = pickle.load(open(self._file_paths['gfs_data'], 'rb'))
         gfs_winds = utils.process_gfs(gfs_winds)
 
-        self.h_gfs = np.load(open(self._file_paths['gfs_alts'], 'rb'))[::-1] / 1000
+        # order heights from small to large, and convert to km
+        self.h_gfs = np.sort(np.load(open(self._file_paths['gfs_alts'], 'rb'))) / 1000
 
         telemetry = pickle.load(open(self._file_paths['telemetry'], 'rb'))
         telemetry, tel_masks = utils.process_telemetry(telemetry)
@@ -63,12 +65,12 @@ class ParameterGenerator():
         speed = telemetry['speed'].loc[tel_masks['speed']][dr[0]:dr[1]]
         direction = telemetry['dir'].loc[tel_masks['dir']][dr[0]:dr[1]]
 
-        matched_s, matched_d, updated_gfs_dates = utils.match_telemetry(speed, direction, gfs_dates)
+        matched_s, matched_d, keeper_gfs_dates = utils.match_telemetry(speed, direction, gfs_dates)
         matched_comps = utils.to_components(matched_s, matched_d)
         
         self.telemetry = {'speed': matched_s, 'dir': matched_d, 
                           'u': matched_comps['u'], 'v': matched_comps['v']}
-        self.gfs_winds = gfs_winds.loc[updated_gfs_dates]
+        self.gfs_winds = gfs_winds.loc[keeper_gfs_dates]
 
         self.N = len(self.gfs_winds)
 
@@ -105,27 +107,45 @@ class ParameterGenerator():
         return {'u': new_u, 'v': new_v, 'speed': np.hypot(new_u, new_v), 
                 'direction': utils.smooth_direction(new_direction), 'h': h_out}
 
+    def _draw_ground_cn2(self):
+        '''model from "where is surface layer turbulence" Tokovinin paper
+        model parameters drawn from normal distribution around paper values'''
+        h_gl = np.linspace(self.h_tel,300,100)
+        
+        tokovinin_a = [-13.38,-13.15,-13.51]
+        tokovinin_p = [-1.16,-1.17,-0.97]
+            
+        a = self.rng.normal(loc=np.mean(tokovinin_a), 
+                            scale=np.std(tokovinin_a)/np.sqrt(2))
+        p = self.rng.normal(loc=np.mean(tokovinin_p), 
+                            scale=np.std(tokovinin_p)/np.sqrt(2))
+            
+        # return heights of ground layer model, adjusted to observatory height, in km
+        return utils.ground_cn2_model({'A':a, 'p':p}, h_gl), self.h0 + h_gl/1000
+
     def get_cn2(self, pt):
         '''
         use GFS winds and other models to calculate a Cn2 profile
-        output is stacked Cn2 of hufnagel model and ground layer model
+        output is stacked Cn2 of hufnagel model and draw from ground layer model
         '''
         # pick out relevant wind data 
         raw_winds = self.get_raw_wind(pt)
 
         # make a vector of heights where hufnagel will be valid
-        h_huf = np.linspace(self.h0 + 3, max(self.h_gfs), 100) * 1000 # to km
+        h_huf = np.linspace(self.h0 + 3, max(self.h_gfs), 100) 
         # interpolate wind data to those heights
-        speed_huf = self.interpolate_wind(raw_winds, h_huf)['speed']
+        speed_huf = self.interpolate_wind(raw_winds, h_huf)['speed'].flatten()
         # calculate hufnagel cn2 for those
-        huf = utils.hufnagel(h_huf, speed_huf)
+        cn2_huf = utils.hufnagel(h_huf, speed_huf)
 
-        # # old: find the z and wind speed that are valid for the hufnagel model
-        # h_huf = self.h_gfs[huf_stop:] * 1000
-        # speed_huf = self.gfs_winds.iloc[pt]['speed'][huf_stop:]
-        
+        # draw model of ground turbulence 
+        cn2_gl, h_gl = self._draw_ground_cn2()
+
+        cn2_complete = np.hstack([cn2_gl, cn2_huf])
+        h_complete = np.hstack([h_gl, h_huf])
+
         # return stacked hufnagel and ground layer profiles/altitudes
-        return np.hstack([self.cn2_gl, huf]), np.hstack([self.h_gl, h_huf / 1000])
+        return cn2_complete, h_complete
 
     def get_cn2_all(self):
         '''get array of cn2 values for the whole dataset'''
@@ -133,35 +153,35 @@ class ParameterGenerator():
         for i in range(self.N):
             cn2, h = self.get_cn2(i)
             cn2_list.append(cn2)
-        return np.array(cn2_list)
+        return np.array(cn2_list), h
 
     def _get_auto_layers(self):
         '''calculate placement of layers in the atmosphere according to the ground, 
         max wind speed, max turbulence, etc'''
-        maxh = 18.
-        temp_h = np.linspace(self.h0, max(self.h_gfs), 1000)
+        h_interp = np.linspace(self.h0 + self.h_tel, max(self.h_gfs), 500)
 
         # interpolate the median speeds from GFS to find height of max
         median_spd = np.median([i for i in self.gfs_winds['speed'].values], axis=0)
-        median_spd_smooth = utils.interpolate(self.h_gfs, median_spd, temp_h, kind='cubic')
-        h_max_spd = temp_h[np.argmax(median_spd_smooth)]
+        median_spd_interp = utils.interpolate(self.h_gfs, median_spd, h_interp, kind='cubic')
+        h_max_spd = h_interp[np.argmax(median_spd_interp)]
 
         # interpolate the median cn2 to find height of max
-        median_cn2 = np.median(self.get_cn2_all(), axis=0)
-        _, cn2_h = self.get_cn2(1)
-        median_cn2_smooth = utils.interpolate(cn2_h, median_cn2, temp_h, kind='cubic')
-        h_max_cn2 = temp_h[100:][np.argmax(median_cn2_smooth[100:])] # find max in mid-atm, not ground
+        all_cn2, h_cn2 = self.get_cn2_all()
+        median_cn2 = np.median(all_cn2, axis=0)
+        median_cn2_interp = utils.interpolate(h_cn2, median_cn2, h_interp, kind='cubic')
+        # find max in mid-atm, not ground
+        h_max_cn2 = h_interp[h_interp>2][np.argmax(median_cn2_interp[h_interp>2])] 
 
         # sort the heights of max speed and max turbulence
-        h4, h5 = np.sort([h_max_spd, h_max_cn2])
+        h3, h4 = np.sort([h_max_spd, h_max_cn2])
 
         # raise the lowest layer slightly off of the ground
         lowest = self.h0 + 0.250
 
-        h3 = np.mean([lowest,h4])
-        h6 = np.mean([h5,maxh])
+        h2 = np.mean([lowest,h4])
+        h5 = np.mean([h4,18])
 
-        return [lowest, h3, h4, h5, h6, maxh]
+        return [lowest, h2, h3, h4, h5, 18]
 
     def _integrate_cn2(self, cn2, h, layers='auto'):
         '''
