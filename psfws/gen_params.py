@@ -157,12 +157,11 @@ class ParameterGenerator():
         # load in data
         gfs_winds, telemetry = self._load_data()
 
-        # first, select just the GFS dates within the date range desired
+        # first, find GFS dates within the date range desired
         gfs_dates = gfs_winds[dr[0]:dr[1]].index
-        n_gfs = len(gfs_dates)
         
         # this function returns median of measured speed/dir telemetry within 
-        # 30 mins of each GFS datapoint
+        # 30 mins of each GFS datapoint, when possible, and datetimes of these
         spd_m, dir_m, dates_m = utils.match_telemetry(telemetry, gfs_dates)
 
         # calculate velocity componenents from the matched speed/directions

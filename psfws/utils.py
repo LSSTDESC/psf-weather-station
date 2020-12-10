@@ -70,33 +70,31 @@ def process_telemetry(telemetry):
     return {'dir': tel_dir.loc[dir_mask], 'speed': tel_speed.loc[speed_mask]}
 
 def to_direction(x, y):
-    """Calculate wind direction from u,v components.
-
-    some more description of what this does.
-    """
+    """Return wind direction, in degrees, from u,v components of velocity."""
     d = np.arctan2(y, x) * (180/np.pi)
     return (d + 180) % 360
 
 def to_components(s, d):
-    """Calculate the wind velocity components given speed/direction.
-
-    some more description of what this does.
-    """
+    """Calculate the wind velocity components given speed/direction."""
     v = s * np.cos((d - 180) * np.pi/180)
     u = s * np.sin((d - 180) * np.pi/180)
     return {'v': v, 'u': u}
 
 def process_gfs(gfs_df):
-    """Process global forecasting system data to desired formats.
+    """Return dataframe of processed global forecasting system data.
 
-    input: dataframe of GFS obsevrations with 'u' and 'v' columns
-    returns dataframe with: 
-    - u and v altitudes reversed
-    - new "speed" and "dir" columns added
+    Input: dataframe of GFS obsevrations, columns = ['u', 'v']
+    Returns: dataframe of GFS observations, columns = ['u','v','speed','dir']
+    
+    Processing steps:  
+    - reverse u and v altitudes
+    - filter daytime datapoints
+    - add "speed" and "dir" columns
     """
     not_daytime = gfs_df.index.hour!=12
     gfs_df = gfs_df.iloc[not_daytime].copy()
 
+    # reverse, and disregard the top 5 altitudes
     gfs_df['u'] = [gfs_df['u'].values[i][::-1][:-5] for i in range(len(gfs_df))]
     gfs_df['v'] = [gfs_df['v'].values[i][::-1][:-5] for i in range(len(gfs_df))]
 
@@ -108,11 +106,9 @@ def process_gfs(gfs_df):
     return gfs_df
 
 def match_telemetry(telemetry, gfs_dates):
-    """Temporally match telemetry and GFS outputs.
+    """Return speed, dir, and overlap datetimes between telemetry and GFS.
 
-    return matched speed/direction data associated with the gfs dates 
-    specifically, return the median telemetry values in a +/- 30min interval 
-    around each GFS point
+    Telemetry vals returned are medians in 1h bins around each GFS output.
     """
     n_gfs = len(gfs_dates)
 
@@ -136,10 +132,23 @@ def match_telemetry(telemetry, gfs_dates):
     return np.array(matched_s), np.array(matched_d), gfs_dates[ids_to_keep]
 
 def interpolate(x, y, new_x, kind):
-    """Interpolate 1D array to new x values.
+    """Interpolate 1D array y at values x to new_x values.
 
-    function to perform either cubic or GP interpolation of inputs
-    returns interpolation new_y at positions new_x
+    Parameters
+    ----------
+    x : array
+        x values of input y
+    y : array
+        1D array to interpolate
+    new_x : array
+        x values of desired interpolated output
+    kind : str
+        Perform either 'cubic' or 'gp' interpolation
+
+    Returns
+    ------- 
+        new_y, interpolated values of y at positions new_x
+
     """
     if kind == 'cubic':
         f_y = interp1d(x, y, kind='cubic')
@@ -152,10 +161,7 @@ def interpolate(x, y, new_x, kind):
     return new_y
 
 def hufnagel(z, v):
-    """Calculte Hufnagel Cn2, input z in km, v in m/s.
-
-    some more description of what this does.
-    """
+    """Calculte Hufnagel Cn2, input z in km, v in m/s."""
     if np.min(z) < 3:
         raise ValueError('hufnagel model only valid for height>3km')
     z = np.copy(z) * 1000 # to km
@@ -166,8 +172,16 @@ def hufnagel(z, v):
 def integrate_in_bins(cn2, h, edges):
     """Integrate cn2 into altitude bins.
 
-    :cn2: cn2 values from model outputs
-    :h: h values of the input cn2
+    Parameters: 
+    -----------
+    cn2 : array, values of cn2
+    h : array, altitudes of input cn2 values
+    edges: array, edges of integration regions
+
+    Returns:
+    -------
+    turbulence integral J : array, size len(edges)-1
+
     """
     # make an equally spaced sampling in h across whole range:
     h_samples = np.linspace(edges[0] * 1000, edges[-1] * 1000, 1000)
@@ -184,10 +198,7 @@ def integrate_in_bins(cn2, h, edges):
     return J
 
 def smooth_direction(directions):
-    """Convert U, V components of wind velocity to a direction.
-
-    Returns the smoothest answer (i.e. shifts points +/- 360 for a smooth curve)
-    """
+    """Return "smoothed" dirs by shifting points +/- 360 for smooth curve."""
     smooth_dir = np.zeros(directions.shape)
     smooth_dir[0] = directions[0]
     
