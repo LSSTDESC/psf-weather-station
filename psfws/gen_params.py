@@ -1,3 +1,5 @@
+"""Class to generate realistic input parameters for atmospheric PSF sims."""
+
 import numpy as np
 import pickle
 import pandas as pd
@@ -5,48 +7,145 @@ import pathlib
 from psfws import utils
 
 class ParameterGenerator():
-    '''
-    class object to generate realistic atmospheric input parameters required for GalSim simulation.
-    uses NOAA GFS predictions matched with telemetry from Cerro Pachon.
-    file paths should be relative to package directory psf-weather-station
-    '''
+    """Class to generate realistic input parameters for atmospheric PSF sims.
+
+    This class uses two inputs: NOAA Global Forecasting System (GFS) outputs 
+    and local wind measurements at the observatory. The repo already contains 
+    these data for Cerro Pachon, and all defaults are set up to match this 
+    location. Use of the code to generate parameters for Cerro Pachon (and 
+    Cerro Telolo, nearby) is straightforward, but for use at other 
+    observatories, users must supply input data: instructions 
+    for downloading NOAA datasets and formatting telemetry are in the 
+    repository README. 
+
+    Attributes
+    ----------
+    gfs_winds : pandas dataframe
+        GFS wind values (matched w telemetry), with DateTime as index and 
+        columns 'u', 'v', 'speed', 'dir'. Each entry in the DataFrame is a 
+        ndarray of values for each altitude, with speed/velocity components 
+        in m/s and directions in degrees.
+    telemetry : dict of ndarrays
+        Keys: 'speed','dir', 'u', 'v'. Telemetry data, temporally matched to 
+        GFS wind data: values in gfs_winds['u'].iloc[i] are in the same time 
+        bin as telemetry['u'][i]. 
+    h_gfs : ndarray
+        Altitudes of GFS datapoints, in km.
+    h0 : float
+        Altitude of observatory, in km.
+    h_dome : float
+        Height of telescope dome, in meters.
+    N : int
+        Number of matched datasets.
+
+
+    Methods
+    -------
+    get_raw_wind(pt)
+        Get a matched set of wind measurements from datapoint with index pt.
+
+    get_wind_interpolation(pt, h_out, kind='gp')
+        Get set of wind measurements from datapoint with index pt, interpolated 
+        to new altitudes h_out. Interpolation type can be specified with the 
+        'kind' keyword (str, either 'cubic' or 'gp' for Gaussian Process).
+
+    get_cn2(pt)
+        Get a set of Cn2 values associated with datapoint with index pt.
+
+    get_turbulence_integral(pt, layers='auto')
+        Get set of turbulence integrals associated with datapoint with index pt.
+        Centers of integration regions set by layers keyword; either array of 
+        values, or 'auto' for them to be automatically calculated based on wind
+        and turbulence maximums.  
+    
+    get_cn2_all()
+        Get Cn2 values for entire dataset, returned as array. 
+
+    draw_parameters(layers='auto')
+        Randomly draw a set of parameters: wind speed, wind direction, 
+        turbulence integral. These are returned in a dict along with layer 
+        heights.
+        Output altitudes are set by layers keyword; either array of values, or
+        'auto' for them to be automatically calculated based on wind and
+        turbulence maximums. 
+
+    Notes
+    -----
+    Code is written to output quantities formatted to match desired inputs for 
+    GalSim atompsheric PSF simulations.
+    
+    """
+
     def __init__(self, location='cerro-pachon', seed=None,
                  date_range=['2019-05-01', '2019-10-31'],
                  gfs_file='data/gfswinds_cp_20190501-20191031.pkl', 
                  gfs_h_file='data/H.npy',
                  telemetry_file='data/tel_dict_CP_20190501-20191101.pkl'):
+        """Initialize generator and process input data.
 
+        Parameters
+        ----------
+        location : str
+            The name of desired mountaintop (default is 'cerro-pachon'). 
+            Valid options: 'cerro-paranal', 'cerro-pachon', 'cerro-telolo', 
+            'mauna-kea', and 'la-palma'.
+            To customize to another observatory, input instead a dict with keys
+            'altitude' (value in km) and 'height' (optional: dome height in m. 
+            If not given, will default to 10m)
+
+        seed : int
+            Seed to initialize random number generator (default is None)
+
+        telemetry_file : str
+            Path to file of telemetry data (default is 
+            'data/tel_dict_CP_20190501-20191101.pkl').
+
+        gfs_file : str
+            Path to file of NOAA GFS data (default is 
+            'data/gfswinds_cp_20190501-20191031.pkl').
+
+        date_range : list
+            List of two strings representing dates, e.g. '2019-05-01'. 
+            Data date range to use. Allows user to select subset of telemetry 
+            (default: ['2019-05-01', '2019-10-31'])
+
+        gfs_h_file : str
+            Path to file of NOAA GFS data altitudes. There should be no reason 
+            to customize this (default is 'data/H.npy')
+
+        """
+        # set up the paths to data files, and check they exist. 
         psfws_base = pathlib.Path(__file__).parents[1].absolute()
-        self._file_paths = {'gfs_data': pathlib.Path.joinpath(psfws_base, gfs_file),
-                            'gfs_alts': pathlib.Path.joinpath(psfws_base, gfs_h_file),
-                            'telemetry': pathlib.Path.joinpath(psfws_base, telemetry_file)}
+        self._file_paths = \
+            {'gfs_data': pathlib.Path.joinpath(psfws_base, gfs_file),
+             'gfs_alts': pathlib.Path.joinpath(psfws_base, gfs_h_file),
+             'telemetry': pathlib.Path.joinpath(psfws_base, telemetry_file)}
         
-        # check that the data files exist:
         for file_path in self._file_paths.values():
             if not file_path.is_file():
                 raise FileNotFoundError(f'file {file_path} not found!')
 
-        self.rng = np.random.default_rng(seed)
+        # set up random number generator with seed, if given
+        self._rng = np.random.default_rng(seed)
 
-        # set ground height (location specific) and telescope height
-        self.h0, self.h_tel = utils.initialize_location(location)
+        # set ground height and telescope height (location specific)
+        self.h0, self.h_dome = utils.initialize_location(location)
         
         # load and match GFS/telemetry data
         self._match_data(date_range)
 
         # set index for lowest GFS data to use according to observatory height:
         # don't use anything lower than 1km above ground
-        self.gfs_stop = max([10, np.where(self.h_gfs > self.h0 + 1)[0][0]])
+        self._gfs_stop = max([10, np.where(self.h_gfs > self.h0 + 1)[0][0]])
 
     def _load_data(self):
-        '''
-        load pickle file of GFS winds and store in class
-        '''
+        """Load and return data from GFS and telemetry pickle files."""
         gfs_winds = pickle.load(open(self._file_paths['gfs_data'], 'rb'))
         gfs_winds = utils.process_gfs(gfs_winds)
 
         # order heights from small to large, and convert to km
-        self.h_gfs = np.sort(np.load(open(self._file_paths['gfs_alts'], 'rb'))) / 1000
+        self.h_gfs = np.sort(np.load(open(self._file_paths['gfs_alts'], 
+                                          'rb'))) / 1000
 
         telemetry = pickle.load(open(self._file_paths['telemetry'], 'rb'))
         telemetry, tel_masks = utils.process_telemetry(telemetry)
@@ -54,87 +153,113 @@ class ParameterGenerator():
         return gfs_winds, telemetry, tel_masks
 
     def _match_data(self, dr=['2019-05-01', '2019-10-31']):
-        '''
-        temporally match the GFS and telemetry data
-        '''
+        """Load data, temporally match telemetry to GFS, add as attribute."""
+        # load in data
         gfs_winds, telemetry, tel_masks= self._load_data()
 
+        # first, select just the GFS dates within the date range desired
         gfs_dates = gfs_winds[dr[0]:dr[1]].index
         n_gfs = len(gfs_dates)
         
+        # pull speed/dir from dataframe, mask unwanted vals, select gfs dates
+        # ? should there be a check whether the GFS spans more dates than tel
+        # ? or I don't worry about this and let the matching function do it
         speed = telemetry['speed'].loc[tel_masks['speed']][dr[0]:dr[1]]
         direction = telemetry['dir'].loc[tel_masks['dir']][dr[0]:dr[1]]
 
-        matched_s, matched_d, keeper_gfs_dates = utils.match_telemetry(speed, direction, gfs_dates)
-        matched_comps = utils.to_components(matched_s, matched_d)
+        # this function returns median of measured speed/dir telemetry within 
+        # 30 mins of each GFS datapoint
+        spd_m, dir_m, dates_m = utils.match_telemetry(speed, 
+                                                      direction, gfs_dates)
+
+        # calculate velocity componenents from the matched speed/directions
+        uv_m = utils.to_components(spd_m, dir_m)
         
-        self.telemetry = {'speed': matched_s, 'dir': matched_d, 
-                          'u': matched_comps['u'], 'v': matched_comps['v']}
-        self.gfs_winds = gfs_winds.loc[keeper_gfs_dates]
+        # store results
+        self.telemetry = {'speed': spd_m, 'dir': dir_m, 
+                          'u': uv_m['u'], 'v': uv_m['v']}
+        self.gfs_winds = gfs_winds.loc[dates_m]
 
         self.N = len(self.gfs_winds)
 
     def get_raw_wind(self, pt):
-        '''
-        construct a vector of wind speed+direction vs altitude using GFS,
-        till self.gfs_stop, and matched telemetry 
-        '''
+        """Get a matched set of wind measurements from datapoint with index pt.
+
+        Parameters
+        ----------
+        pt : int
+            index of output datapoint desired
+
+        Returns
+        -------
+        dict of wind measurements, made of paired telemetry and GFS data for 
+        integer index pt. 
+        Keys are 'u' and 'v' for arrays of velocity components, 'speed' and 
+        'direction', and 'h' gives array of altitudes for all measurements. 
+
+        """
         speed = np.hstack([self.telemetry['speed'][pt],
-                           self.gfs_winds.iloc[pt]['speed'][self.gfs_stop:]])
+                           self.gfs_winds.iloc[pt]['speed'][self._gfs_stop:]])
 
         direction = np.hstack([self.telemetry['dir'][pt],
-                               self.gfs_winds.iloc[pt]['dir'][self.gfs_stop:]])
+                               self.gfs_winds.iloc[pt]['dir'][self._gfs_stop:]])
 
         u = np.hstack([self.telemetry['u'][pt],
-                       self.gfs_winds.iloc[pt]['u'][self.gfs_stop:]])
+                       self.gfs_winds.iloc[pt]['u'][self._gfs_stop:]])
 
         v = np.hstack([self.telemetry['v'][pt],
-                       self.gfs_winds.iloc[pt]['v'][self.gfs_stop:]])
+                       self.gfs_winds.iloc[pt]['v'][self._gfs_stop:]])
 
-        height = np.hstack([self.h0, self.h_gfs[self.gfs_stop:]])
+        height = np.hstack([self.h0, self.h_gfs[self._gfs_stop:]])
 
         return {'u': u, 'v': v, 'speed': speed, 
                 'direction': utils.smooth_direction(direction), 'h': height}
 
-    def interpolate_wind(self, p_dict, h_out, kind='gp'):
-        '''
-        use matched data to interpolate 
-        '''
+    def _interpolate_wind(self, p_dict, h_out, kind='gp'):
+        """Return new wind data dict, vals interpolated to new heights h_out."""
         new_u = utils.interpolate(p_dict['h'], p_dict['u'], h_out, kind)
         new_v = utils.interpolate(p_dict['h'], p_dict['v'], h_out, kind)
 
         new_direction = utils.to_direction(new_v, new_u)
+
         return {'u': new_u, 'v': new_v, 'speed': np.hypot(new_u, new_v), 
                 'direction': utils.smooth_direction(new_direction), 'h': h_out}
 
     def _draw_ground_cn2(self):
-        '''model from "where is surface layer turbulence" Tokovinin paper
-        model parameters drawn from normal distribution around paper values'''
-        h_gl = np.linspace(self.h_tel,300,100)
+        """Return ground Cn2 model, with parameters randomly drawn.
+
+        Model from "where is surface layer turbulence" (Tokovinin 2010), params
+        drawn from normal distribution around values from paper.
+        """
+        # model valid till 300m
+        h_gl = np.linspace(self.h_dome, 300, 100)
         
         tokovinin_a = [-13.38,-13.15,-13.51]
         tokovinin_p = [-1.16,-1.17,-0.97]
             
-        a = self.rng.normal(loc=np.mean(tokovinin_a), 
+        # adjust by sqrt(N-1) for sample variance 
+        a = self._rng.normal(loc=np.mean(tokovinin_a), 
                             scale=np.std(tokovinin_a)/np.sqrt(2))
-        p = self.rng.normal(loc=np.mean(tokovinin_p), 
+        p = self._rng.normal(loc=np.mean(tokovinin_p), 
                             scale=np.std(tokovinin_p)/np.sqrt(2))
             
-        # return heights of ground layer model, adjusted to observatory height, in km
-        return utils.ground_cn2_model({'A':a, 'p':p}, h_gl), self.h0 + h_gl/1000
+        # also return h of GL model in km, adjusted to observatory height
+        return utils.ground_cn2_model({'A': a, 'p': p}, 
+                                      h_gl), self.h0 + h_gl/1000
 
     def get_cn2(self, pt):
-        '''
-        use GFS winds and other models to calculate a Cn2 profile
-        output is stacked Cn2 of hufnagel model and draw from ground layer model
-        '''
+        """Get Cn2 and h arrays for datapoint with index pt.
+
+        Use Hufnagel model and GFS winds to calculate a Cn2 profile above 3km,
+        stacked with a ground layer model draw.
+        """
         # pick out relevant wind data 
         raw_winds = self.get_raw_wind(pt)
 
         # make a vector of heights where hufnagel will be valid
         h_huf = np.linspace(self.h0 + 3, max(self.h_gfs), 100) 
         # interpolate wind data to those heights
-        speed_huf = self.interpolate_wind(raw_winds, h_huf)['speed'].flatten()
+        speed_huf = self._interpolate_wind(raw_winds, h_huf)['speed'].flatten()
         # calculate hufnagel cn2 for those
         cn2_huf = utils.hufnagel(h_huf, speed_huf)
 
@@ -148,7 +273,7 @@ class ParameterGenerator():
         return cn2_complete, h_complete
 
     def get_cn2_all(self):
-        '''get array of cn2 values for the whole dataset'''
+        """Get array of Cn2 values for all data available."""
         cn2_list = []
         for i in range(self.N):
             cn2, h = self.get_cn2(i)
@@ -156,21 +281,17 @@ class ParameterGenerator():
         return np.array(cn2_list), h
 
     def _get_auto_layers(self):
-        '''calculate placement of layers in the atmosphere according to the ground, 
-        max wind speed, max turbulence, etc'''
-        h_interp = np.linspace(self.h0 + self.h_tel, max(self.h_gfs), 500)
+        """Return layer altitudes according to max wind speed & turbulence."""
+        # make an array of heights for interpolation
+        h_interp = np.linspace(self.h0 + self.h_dome, max(self.h_gfs), 500)
 
         # interpolate the median speeds from GFS to find height of max
-        median_spd = np.median([i for i in self.gfs_winds['speed'].values], axis=0)
-        median_spd_interp = utils.interpolate(self.h_gfs, median_spd, h_interp, kind='cubic')
-        h_max_spd = h_interp[np.argmax(median_spd_interp)]
-
+        all_speeds = [i for i in self.gfs_winds['speed'].values]
+        h_maxspd = utils.find_max_median(all_speeds, self.h_gfs, h_interp)
+        
         # interpolate the median cn2 to find height of max
         all_cn2, h_cn2 = self.get_cn2_all()
-        median_cn2 = np.median(all_cn2, axis=0)
-        median_cn2_interp = utils.interpolate(h_cn2, median_cn2, h_interp, kind='cubic')
-        # find max in mid-atm, not ground
-        h_max_cn2 = h_interp[h_interp>2][np.argmax(median_cn2_interp[h_interp>2])] 
+        h_max_cn2 = utils.find_max_median(all_cn2, h_cn2, h_interp)
 
         # sort the heights of max speed and max turbulence
         h3, h4 = np.sort([h_max_spd, h_max_cn2])
@@ -178,26 +299,41 @@ class ParameterGenerator():
         # raise the lowest layer slightly off of the ground
         lowest = self.h0 + 0.250
 
-        h2 = np.mean([lowest,h4])
-        h5 = np.mean([h4,18])
+        h2 = np.mean([lowest, h4])
+        h5 = np.mean([h4, 18])
 
         return [lowest, h2, h3, h4, h5, 18]
 
     def _integrate_cn2(self, cn2, h, layers='auto'):
-        '''
-        get an integrated Cn2 profile 
-        :layers: how to define the bins for the integration. 'er' to follow the bin centers from ER 2000,
-        '''
+        """Calculate turbulence integral of given Cn2 at given layers.
+
+        Parameters
+        ----------
+        cn2 : array
+            cn2 values
+        h : array
+            heights of cn2 values
+        layers : str or list or array
+            Centers of integration regions set by layers keyword; either 
+            list/array of values, or 'auto' for them to be automatically 
+            calculated based on wind and turbulence maximums (default: 'auto')
+
+        Returns
+        -------
+        turbulence integral values J, in m^(1/3)
+        integration bin edges, in km
+        integration bin centers (aka layers if not 'auto'), in km
+
+        """
         maxh = max(self.h_gfs)
         
         # define bins according to layers argument   
         if layers == 'auto':
             bin_centers = self._get_auto_layers()
-        elif layers == 'er':
-            bin_centers = [i+self.h0 for i in [0,1.8,3.3, 5.8,7.4,13.1,15.8]]
-        elif type(layers) == list:
+        else:
             bin_centers = layers
-        edges = [self.h0]+[np.mean(bin_centers[i:i+2]) for i in range(len(bin_centers)-1)]+[maxh]
+        edges = [self.h0]+[np.mean(bin_centers[i:i+2]) \
+                                   for i in range(len(bin_centers)-1)]+[maxh]
 
         # integrate cn2 in bins defined by these edges
         j = utils.integrate_in_bins(cn2, h, edges)
@@ -205,22 +341,29 @@ class ParameterGenerator():
         return j, np.array(edges), np.array(bin_centers)
 
     def get_turbulence_integral(self, pt, layers='auto'):
-        '''
-        get an integrated Cn2 profile for dataset pt
-        '''
+        """Return integrated Cn2 profile for datapoint with index pt."""
+        # get cn2 of pt
         cn2, h = self.get_cn2(pt)
 
+        # return integrated cn2
         return self._integrate_cn2(cn2, h, layers=layers)
 
     def get_wind_interpolation(self, pt, h_out, kind='gp'):
-        '''return interpolated winds for a dataset'''
+        """Return winds for dataset with index pt interpolated to h_out."""
         wind_dict = self.get_raw_wind(pt)
-        return self.interpolate_wind(wind_dict, h_out, kind=kind)
+        return self._interpolate_wind(wind_dict, h_out, kind=kind)
 
     def draw_parameters(self, layers='auto'):
-        '''draw a random, full set of parameters. 
-        returns a dict of layers, wind params, and turbulence integrals '''
-        pt = self.rng.integers(low=0,high=len(self.gfs_winds))
+        """Draw a random, full set of parameters.
+
+        Parameters: layers sets output altitudes; either array of values, or
+        'auto' for them to be automatically calculated based on wind and
+        turbulence maximums (default: 'auto').
+
+        Returns: dict of parameters. Keys are 'j' for turbulence integrals,
+        'u','v','speed','direction' for wind parameters, and 'h' for altitudes
+        """
+        pt = self._rng.integers(low=0,high=len(self.gfs_winds))
 
         j, _, layers = self.get_turbulence_integral(pt, layers='auto')
         params = self.get_wind_interpolation(pt, layers)
@@ -228,7 +371,3 @@ class ParameterGenerator():
         params['j'] = j
 
         return params
-
-
-
-
