@@ -147,30 +147,23 @@ class ParameterGenerator():
         self.h_gfs = np.sort(np.load(open(self._file_paths['gfs_alts'], 
                                           'rb'))) / 1000
 
-        telemetry = pickle.load(open(self._file_paths['telemetry'], 'rb'))
-        telemetry, tel_masks = utils.process_telemetry(telemetry)
+        raw_telemetry = pickle.load(open(self._file_paths['telemetry'], 'rb'))
+        telemetry = utils.process_telemetry(raw_telemetry)
 
-        return gfs_winds, telemetry, tel_masks
+        return gfs_winds, telemetry #, tel_masks
 
     def _match_data(self, dr=['2019-05-01', '2019-10-31']):
         """Load data, temporally match telemetry to GFS, add as attribute."""
         # load in data
-        gfs_winds, telemetry, tel_masks= self._load_data()
+        gfs_winds, telemetry = self._load_data()
 
         # first, select just the GFS dates within the date range desired
         gfs_dates = gfs_winds[dr[0]:dr[1]].index
         n_gfs = len(gfs_dates)
         
-        # pull speed/dir from dataframe, mask unwanted vals, select gfs dates
-        # ? should there be a check whether the GFS spans more dates than tel
-        # ? or I don't worry about this and let the matching function do it
-        speed = telemetry['speed'].loc[tel_masks['speed']][dr[0]:dr[1]]
-        direction = telemetry['dir'].loc[tel_masks['dir']][dr[0]:dr[1]]
-
         # this function returns median of measured speed/dir telemetry within 
         # 30 mins of each GFS datapoint
-        spd_m, dir_m, dates_m = utils.match_telemetry(speed, 
-                                                      direction, gfs_dates)
+        spd_m, dir_m, dates_m = utils.match_telemetry(telemetry, gfs_dates)
 
         # calculate velocity componenents from the matched speed/directions
         uv_m = utils.to_components(spd_m, dir_m)
@@ -291,10 +284,10 @@ class ParameterGenerator():
         
         # interpolate the median cn2 to find height of max
         all_cn2, h_cn2 = self.get_cn2_all()
-        h_max_cn2 = utils.find_max_median(all_cn2, h_cn2, h_interp)
+        h_maxcn2 = utils.find_max_median(all_cn2, h_cn2, h_interp)
 
         # sort the heights of max speed and max turbulence
-        h3, h4 = np.sort([h_max_spd, h_max_cn2])
+        h3, h4 = np.sort([h_maxspd, h_maxcn2])
 
         # raise the lowest layer slightly off of the ground
         lowest = self.h0 + 0.250

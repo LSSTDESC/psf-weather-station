@@ -3,7 +3,7 @@
 import numpy as np
 import pandas as pd
 from scipy.interpolate import interp1d
-from sklearn import gaussian_process as gp
+from sklearn import gaussian_process
 from scipy.integrate import trapz
 
 
@@ -54,22 +54,11 @@ def find_max_median(x, h_old, h_new):
     return h_max
 
 def process_telemetry(telemetry):
-    """Process telemetry measurements of speed/direction.
+    """Return masked telemetry measurements of speed/direction.
 
-    Parameters
-    ----------
-    telemetry : dict 
-        Dict with keys 'wind_direction' and 'wind_speed', values are pandas 
-        series obejcts of wind speed/direction measurements
-    
-    Returns
-    ------- 
-    telemetry: dict
-        Dict holding a dataframe each for wind directions and speeds, 
-        keys 'dir' and 'speed'
-    tel_masks : dict
-        Dict with masks for unwanted values (e.g. zeros) in above data
-
+    Input and output are both dicts of pandas series of wind speeds/directions.
+    Values in output masked for zeros and speeds > 40m/s. Keys in output are 
+    'speed' and 'dir'
     """
     tel_dir = telemetry['wind_direction']
     tel_speed = telemetry['wind_speed']
@@ -77,9 +66,8 @@ def process_telemetry(telemetry):
     # find masks for telemetry values that are zero or, for speeds, >40
     speed_mask = tel_speed.index[tel_speed.apply(lambda x: x!=0 and x<40)]
     dir_mask = tel_dir.index[tel_dir.apply(lambda x: x!=0)]
-    cp_masks = {'speed': speed_mask, 'dir': tel_dir.index}
 
-    return {'dir': tel_dir, 'speed': tel_speed}, cp_masks
+    return {'dir': tel_dir.loc[dir_mask], 'speed': tel_speed.loc[speed_mask]}
 
 def to_direction(x, y):
     """Calculate wind direction from u,v components.
@@ -119,7 +107,7 @@ def process_gfs(gfs_df):
                      for i in range(len(gfs_df))]
     return gfs_df
 
-def match_telemetry(speed, direction, gfs_dates):
+def match_telemetry(telemetry, gfs_dates):
     """Temporally match telemetry and GFS outputs.
 
     return matched speed/direction data associated with the gfs dates 
@@ -127,6 +115,9 @@ def match_telemetry(speed, direction, gfs_dates):
     around each GFS point
     """
     n_gfs = len(gfs_dates)
+
+    speed = telemetry['speed']
+    direction = telemetry['dir']
 
     speed_ids = [speed.index[abs(gfs_dates[i] - speed.index) \
                              < pd.Timedelta('30min')] for i in range(n_gfs)]
