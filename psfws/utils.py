@@ -8,13 +8,19 @@ from scipy.integrate import trapz
 
 
 def initialize_location(location):
-    """Output location specific variables.
+    """Given location identifier, return ground altitude and dome height.
 
-    given telescope identifier, return ground altitude and 
-    ground cn2 parameters?
+    Parameters
+    ----------
+    location : str or dict
+        Valid options for : 'cerro-paranal', 'cerro-pachon', 'cerro-telolo', 
+        'mauna-kea', and 'la-palma'.
+        To customize to another observatory, input instead a dict with keys
+        'altitude' (value in km) and 'height' (optional: dome height in m. 
+        If not given, will default to 10m)
+
     """
-    # custom usage: input dict with key 'altitude', value in km, 
-    # relative to sea level and 'height' keyword for telescope height, in m
+    # custom usage
     if type(location) == dict:
         h0 = location['altitude']
         try:
@@ -22,30 +28,26 @@ def initialize_location(location):
         except KeyError:
             h_tel = 10
 
-    # for defaults, specify which observatory location to use. 
     else:
         ground_altitude = {'cerro-pachon': 2.715, 'mauna-kea': 4.2, 
                            'cerro-telolo': 2.2, 'la-palma': 2.4,
                            'cerro-paranal': 2.64}
         h0 = ground_altitude[location]
-        h_tel = 10 # complete guess...
+        h_tel = 10 # in m
         
     return h0, h_tel/1000
 
 def ground_cn2_model(params, h):
-    """Power law model for Cn2 as function of elevation.
-
-    power law model for Cn2 as a function of height, given dict of parameters. 
-    parameters are amplitude A and power p
-    """
+    """Return power law model for Cn2 as function of elevation."""
     logcn2 = params['A'] + params['p'] * np.log10(h)
     return 10**(logcn2)
 
 def find_max_median(x, h_old, h_new):
-    """Find max of array x by interpolating datapoints."""
+    """Find max of median of array x by interpolating datapoints."""
     # interpolate median x to smoothly spaced new h values
     x_median = np.median(x, axis=0)
     x_interp = interpolate(h_old, x_median, h_new, kind='cubic')
+    
     # find maximum of interpolated x *above 2km*, to avoid ground effects
     h_max = h_new[h_new>2][np.argmax(x_interp[h_new>2])]
 
@@ -54,11 +56,20 @@ def find_max_median(x, h_old, h_new):
 def process_telemetry(telemetry):
     """Process telemetry measurements of speed/direction.
 
-    input: 
-    - dictionary holding two pandas Series of wind speed/direction measurements
-    returns 
-    - a dict holding a dataframe each for wind directions and speeds
-    - a dict with masks for each of the above dfs
+    Parameters
+    ----------
+    telemetry : dict 
+        Dict with keys 'wind_direction' and 'wind_speed', values are pandas 
+        series obejcts of wind speed/direction measurements
+    
+    Returns
+    ------- 
+    telemetry: dict
+        Dict holding a dataframe each for wind directions and speeds, 
+        keys 'dir' and 'speed'
+    tel_masks : dict
+        Dict with masks for unwanted values (e.g. zeros) in above data
+
     """
     tel_dir = telemetry['wind_direction']
     tel_speed = telemetry['wind_speed']
