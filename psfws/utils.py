@@ -1,42 +1,65 @@
+"""Util functions for psfws."""
+
 import numpy as np
 import pandas as pd
 from scipy.interpolate import interp1d
-from sklearn import gaussian_process 
+from sklearn import gaussian_process as gp
 from scipy.integrate import trapz
 
 
 def initialize_location(location):
-    '''given telescope identifier, return ground altitude and ground cn2 parameters?'''
+    """Output location specific variables.
 
-    # custom usage: input dict with key 'altitude', value in km, relative to sea level
-    # and 'height' keyword for telescope height, in m
+    given telescope identifier, return ground altitude and 
+    ground cn2 parameters?
+    """
+    # custom usage: input dict with key 'altitude', value in km, 
+    # relative to sea level and 'height' keyword for telescope height, in m
     if type(location) == dict:
         h0 = location['altitude']
-        h_tel = location['height']
+        try:
+            h_tel = location['height']
+        except KeyError:
+            h_tel = 10
 
     # for defaults, specify which observatory location to use. 
     else:
-        ground_altitude = {'cerro-pachon':2.715, 'mauna-kea':4.2, 
-                           'cerro-telolo':2.2, 'la-palma':2.4}
+        ground_altitude = {'cerro-pachon': 2.715, 'mauna-kea': 4.2, 
+                           'cerro-telolo': 2.2, 'la-palma': 2.4,
+                           'cerro-paranal': 2.64}
         h0 = ground_altitude[location]
-        h_tel = 8 #complete guess...
+        h_tel = 10 # complete guess...
         
     return h0, h_tel/1000
 
 def ground_cn2_model(params, h):
-    '''power law model for Cn2 as a function of height, given dict of parameters. 
-    parameters are amplitude A and power p'''
+    """Power law model for Cn2 as function of elevation.
+
+    power law model for Cn2 as a function of height, given dict of parameters. 
+    parameters are amplitude A and power p
+    """
     logcn2 = params['A'] + params['p'] * np.log10(h)
     return 10**(logcn2)
 
+def find_max_median(x, h_old, h_new):
+    """Find max of array x by interpolating datapoints."""
+    # interpolate median x to smoothly spaced new h values
+    x_median = np.median(x, axis=0)
+    x_interp = interpolate(h_old, x_median, h_new, kind='cubic')
+    # find maximum of interpolated x *above 2km*, to avoid ground effects
+    h_max = h_new[h_new>2][np.argmax(x_interp[h_new>2])]
+
+    return h_max
+
 def process_telemetry(telemetry):
-    '''
+    """Process telemetry measurements of speed/direction.
+
     input: 
     - dictionary holding two pandas Series of wind speed/direction measurements
     returns 
     - a dict holding a dataframe each for wind directions and speeds
     - a dict with masks for each of the above dfs
-    '''
+    """
     tel_dir = telemetry['wind_direction']
     tel_speed = telemetry['wind_speed']
 
@@ -48,23 +71,30 @@ def process_telemetry(telemetry):
     return {'dir': tel_dir, 'speed': tel_speed}, cp_masks
 
 def to_direction(x, y):
-    '''calculate wind direction from u,v components'''
+    """Calculate wind direction from u,v components.
+
+    some more description of what this does.
+    """
     d = np.arctan2(y, x) * (180/np.pi)
     return (d + 180) % 360
 
 def to_components(s, d):
-    '''calculate the wind velocity components given speed/direction'''
+    """Calculate the wind velocity components given speed/direction.
+
+    some more description of what this does.
+    """
     v = s * np.cos((d - 180) * np.pi/180)
     u = s * np.sin((d - 180) * np.pi/180)
     return {'v': v, 'u': u}
 
 def process_gfs(gfs_df):
-    '''
+    """Process global forecasting system data to desired formats.
+
     input: dataframe of GFS obsevrations with 'u' and 'v' columns
     returns dataframe with: 
     - u and v altitudes reversed
     - new "speed" and "dir" columns added
-    '''
+    """
     not_daytime = gfs_df.index.hour!=12
     gfs_df = gfs_df.iloc[not_daytime].copy()
 
@@ -79,40 +109,51 @@ def process_gfs(gfs_df):
     return gfs_df
 
 def match_telemetry(speed, direction, gfs_dates):
-    '''
+    """Temporally match telemetry and GFS outputs.
+
     return matched speed/direction data associated with the gfs dates 
-    specifically, return the median telemetry values in a +/- 30min interval around each GFS point
-    '''
+    specifically, return the median telemetry values in a +/- 30min interval 
+    around each GFS point
+    """
     n_gfs = len(gfs_dates)
 
-    speed_ids = [speed.index[abs(gfs_dates[i] - speed.index) < pd.Timedelta('30min')] 
-               for i in range(n_gfs)]
-    dir_ids = [direction.index[abs(gfs_dates[i] - direction.index) < pd.Timedelta('30min')] 
-               for i in range(n_gfs)]
+    speed_ids = [speed.index[abs(gfs_dates[i] - speed.index) \
+                             < pd.Timedelta('30min')] for i in range(n_gfs)]
+
+    dir_ids = [direction.index[abs(gfs_dates[i] - direction.index) \
+                               < pd.Timedelta('30min')] for i in range(n_gfs)]
     
-    ids_to_keep = [i for i in range(n_gfs) if len(speed_ids[i])!=0 and len(dir_ids[i])!=0]
+    ids_to_keep = [i for i in range(n_gfs) \
+                    if len(speed_ids[i])!=0 and len(dir_ids[i])!=0]
     
-    matched_s = [np.median(speed.loc[speed_ids[i]]) for i in range(n_gfs) if i in ids_to_keep]
-    matched_d = [np.median(direction.loc[dir_ids[i]]) for i in range(n_gfs) if i in ids_to_keep]
+    matched_s = [np.median(speed.loc[speed_ids[i]]) \
+                           for i in range(n_gfs) if i in ids_to_keep]
+    matched_d = [np.median(direction.loc[dir_ids[i]]) \
+                           for i in range(n_gfs) if i in ids_to_keep]
 
     return np.array(matched_s), np.array(matched_d), gfs_dates[ids_to_keep]
 
 def interpolate(x, y, new_x, kind):
-    '''
+    """Interpolate 1D array to new x values.
+
     function to perform either cubic or GP interpolation of inputs
     returns interpolation new_y at positions new_x
-    '''
+    """
     if kind == 'cubic':
         f_y = interp1d(x, y, kind='cubic')
         new_y = f_y(new_x)
     elif kind == 'gp':
-        gp = gaussian_process.GaussianProcessRegressor(normalize_y=True, alpha=1e-3, n_restarts_optimizer=5)
+        gp = gaussian_process.GaussianProcessRegressor(normalize_y=True, 
+                                         alpha=1e-3, n_restarts_optimizer=5)
         gp.fit(x.reshape(-1, 1), y.reshape(-1, 1))
         new_y = gp.predict(new_x.reshape(-1,1))
     return new_y
 
 def hufnagel(z, v):
-    '''calculte hufnagel Cn2. input z in km, v in m/s'''
+    """Calculte Hufnagel Cn2, input z in km, v in m/s.
+
+    some more description of what this does.
+    """
     if np.min(z) < 3:
         raise ValueError('hufnagel model only valid for height>3km')
     z = np.copy(z) * 1000 # to km
@@ -121,11 +162,11 @@ def hufnagel(z, v):
     return tmp1 + tmp2
 
 def integrate_in_bins(cn2, h, edges):
-    '''
-    integrate cn2 into altitude bins
+    """Integrate cn2 into altitude bins.
+
     :cn2: cn2 values from model outputs
     :h: h values of the input cn2
-    '''
+    """
     # make an equally spaced sampling in h across whole range:
     h_samples = np.linspace(edges[0] * 1000, edges[-1] * 1000, 1000)
 
@@ -141,10 +182,10 @@ def integrate_in_bins(cn2, h, edges):
     return J
 
 def smooth_direction(directions):
-    '''
-    Convert U, V components of wind velocity to a direction.
+    """Convert U, V components of wind velocity to a direction.
+
     Returns the smoothest answer (i.e. shifts points +/- 360 for a smooth curve)
-    '''
+    """
     smooth_dir = np.zeros(directions.shape)
     smooth_dir[0] = directions[0]
     
