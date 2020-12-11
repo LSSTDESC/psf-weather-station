@@ -30,11 +30,15 @@ The repository contains code to automatically download and process GFS data of i
 Additional requirements: pygrib, argparse
 
 Run:
+
 `psfws.get_noaa_data(start_date, end_date, lat, lon)`
+
 For example, for Cerro Pachon, one could run the following:
+
 `psfws.get_noaa_data(20190501, 20190603, -30, 289.5)`
 
 Or, from command line, one can run:
+
 `python psf-weather-station/psfws/get_noaa_data.py -lat -30 -lon 289.5 -d1 20190501 -d2 20190603`
 
 This will run the download and processing of NOAA GFS files: though it depends on how many months of data requested, this may take a long time (1-10h). The raw GFS data files will automatically be erased once the desired data has been extracted, so this should not take more than 60MB of disc space at any given time. 
