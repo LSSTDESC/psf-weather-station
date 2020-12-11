@@ -27,7 +27,8 @@ numpy, pandas, pickle, scipy, pathlib
 The observatory telemetry should be in a dictionary, stored as a pickle file. The dictionary must have two keys: "wind_direction" and "wind speed". The values for each of these should be pandas (pd) Series holding measured values in degrees and m/s, respectively. The Series index for both should be pd.datetime objects of the measurement times, in UTC. 
 ## downloading new GFS data
 The repository contains code to automatically download and process GFS data of interest for the user. The only inputs required are location of observatory, in lat/long rounded to nearest 0.5 degrees (e.g. for Gemini South, we use lat=-30 and lon=289.5), and start/end dates formatted as in 20190528 (ideally these should roughly match start/end dates of available telemetry).
-Additional requirements: pygrib, argparse
+
+Additional requirements: pygrib (recommend using conda install for this rather than pip) and wget
 
 Run:
 
