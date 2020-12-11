@@ -28,8 +28,6 @@ The observatory telemetry should be in a dictionary, stored as a pickle file. Th
 ## downloading new GFS data
 The repository contains code to automatically download and process GFS data of interest for the user. The only inputs required are location of observatory, in lat/long rounded to nearest 0.5 degrees (e.g. for Gemini South, we use lat=-30 and lon=289.5), and start/end dates formatted as in 20190528 (ideally these should roughly match start/end dates of available telemetry).
 
-Additional requirements: pygrib (recommend using conda install for this rather than pip) and wget
-
 Run:
 
 `psfws.get_noaa_data(start_date, end_date, lat, lon)`
@@ -42,4 +40,13 @@ Or, from command line, one can run:
 
 `python psf-weather-station/psfws/get_noaa_data.py -lat -30 -lon 289.5 -d1 20190501 -d2 20190603`
 
-This will run the download and processing of NOAA GFS files: though it depends on how many months of data requested, this may take a long time (1-10h). The raw GFS data files will automatically be erased once the desired data has been extracted, so this should not take more than 60MB of disc space at any given time. 
+This will run the download and processing of NOAA GFS files: though it depends on how many months of data requested, this may take a long time (1-10h). The raw GFS data files will automatically be erased once the desired data has been extracted, so this should not take more than 60MB of disc space at any given time.
+
+Additional requirements: pygrib, wget
+
+### aside: installing pygrib
+Installing this package is not always easy, so this reason, it is not a dependency for most of psf-weather-station. However, it is a requirement for using get_noaa_data() for the processing of GFS data files. For installation of pygrib, I recommend using conda rather than pip:
+
+`conda install -c conda-forge pygrib`
+
+See [this gituhub issue](https://github.com/jswhit/pygrib/issues/115) for more installatino debugging ideas if this doesn't work for you.
