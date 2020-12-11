@@ -45,8 +45,8 @@ This will run the download and processing of NOAA GFS files: though it depends o
 Additional requirements: pygrib, wget
 
 ### aside: installing pygrib
-Installing this package is not always easy, so this reason, it is not a dependency for most of psf-weather-station. However, it is a requirement for using get_noaa_data() for the processing of GFS data files. For installation of pygrib, I recommend using conda rather than pip:
+Installing this package is not always easy, so for this reason it is not a dependency for most of psf-weather-station. However, it is a requirement for using get_noaa_data() for the processing of GFS data files. For installation of pygrib, I recommend using conda rather than pip:
 
 `conda install -c conda-forge pygrib`
 
-See [this gituhub issue](https://github.com/jswhit/pygrib/issues/115) for more installatino debugging ideas if this doesn't work for you.
+See [this gituhub issue](https://github.com/jswhit/pygrib/issues/115) for more installation debugging ideas if this doesn't work for you.
