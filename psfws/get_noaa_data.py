@@ -7,8 +7,6 @@ import pickle
 import pathlib
 from datetime import timedelta, datetime
 
-# do not want pygrib to be a dependency for the whole psfws package. how...?
-import pygrib
 
 url = 'https://www.ncei.noaa.gov/thredds/fileServer/' + \
       'model-gfs-g4-anl-files-old/'
@@ -23,6 +21,9 @@ os.chdir(DATA_DIR)
 
 def _download_gfs_file(date, time):
     """Download a single GFS file according to date/time provided."""
+    # do not want pygrib to be a dependency for the whole psfws package.
+    import pygrib
+
     remote_path = pathlib.Path.joinpath(URL_BASE, f'{date[:6]}/{date}/')
     gfs_file = f'gfsanl_4_{date}_{time}_000.grb2'
 
