@@ -1,5 +1,3 @@
-[![Build Status](https://travis-ci.com/cahebert/psf-weather-station.svg?branch=master)](https://travis-ci.com/cahebert/psf-weather-station)
-
 # psf-weather-station
 Generate realistic wind and turbulence integral parameters for atmospheric point-spread function simulations.
 
