@@ -21,9 +21,6 @@ os.chdir(DATA_DIR)
 
 def _download_gfs_file(date, time):
     """Download a single GFS file according to date/time provided."""
-    # do not want pygrib to be a dependency for the whole psfws package.
-    import pygrib
-
     remote_path = pathlib.Path.joinpath(URL_BASE, f'{date[:6]}/{date}/')
     gfs_file = f'gfsanl_4_{date}_{time}_000.grb2'
 
@@ -49,6 +46,9 @@ def _delete_gfs_file(date, time):
 
 def _load_uv(date, time, latitude=-30, longitude=289.5):
     """Load U and V componenents of wind for GFS file given date and time."""
+    # do not want pygrib to be a dependency for the whole psfws package.
+    import pygrib
+
     # load in dataset (specific date/time given by args)
     try:
         grbs = pygrib.open(f'gfsanl_4_{date}_{time}_000.grb2')
