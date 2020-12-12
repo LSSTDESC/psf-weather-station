@@ -3,7 +3,7 @@
 # psf-weather-station
 Generate realistic wind and turbulence integral parameters for atmospheric point-spread function simulations.
 
-This package uses two inputs: NOAA Global Forecasting System (GFS) outputs, and local wind measurements at the observatory. The repo contains these data for Cerro Pachon, and all defaults are set up to match this location, so generating parameters for Cerro Pachon (and Cerro Telolo, nearby) is straightforward. For use at other observatories, users must supply some input data: instructions for downloading NOAA datasets and formatting telemetry are below.
+This package uses two inputs: [NOAA Global Forecasting System (GFS)](https://www.ncdc.noaa.gov/data-access/model-data/model-datasets/global-forcast-system-gfs) outputs, and local wind measurements at the observatory. The repo contains these data for Cerro Pachon, and all defaults are set up to match this location, so generating parameters for Cerro Pachon (and Cerro Telolo, nearby) is straightforward. For use at other observatories, users must supply some input data: instructions for downloading NOAA datasets and formatting telemetry are below.
 
 Note that the outputs match desired inputs for [GalSim](https://github.com/GalSim-developers/GalSim) atompsheric PSF simulations.
 
@@ -42,7 +42,7 @@ Or, from command line, one can run:
 
 This will run the download and processing of NOAA GFS files: though it depends on how many months of data requested, this may take a long time (1-10h). The raw GFS data files will automatically be erased once the desired data has been extracted, so this should not take more than 60MB of disc space at any given time.
 
-Additional requirements: pygrib, wget
+Additional requirements: pygrib
 
 ### aside: installing pygrib
 Installing this package is not always easy, so for this reason it is not a dependency for most of psf-weather-station. However, it is a requirement for using get_noaa_data() for the processing of GFS data files. For installation of pygrib, I recommend using conda rather than pip:
