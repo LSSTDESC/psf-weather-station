@@ -1,6 +1,5 @@
 numpy>=1.12
 scikit-learn>=0.22.1
-astropy>=2.0
 pytest>=3.6
 scipy>=1.2.0
 pandas>=1.0.1
