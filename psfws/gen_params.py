@@ -25,7 +25,9 @@ class ParameterGenerator():
         GFS wind values (matched w telemetry), with DateTime as index and
         columns 'u', 'v', 'speed', 'dir'. Each entry in the DataFrame is a
         ndarray of values for each altitude, with speed/velocity components
-        in m/s and directions in degrees.
+        in m/s and directions in degrees. The u/v components of velocity
+        correspond to north/south winds, respectively, and the wind direction
+        is given as degrees west of north.
     telemetry : dict of ndarrays
         Keys: 'speed','dir', 'u', 'v'. Telemetry data, temporally matched to
         GFS wind data: values in gfs_winds['u'].iloc[i] are in the same time
@@ -79,7 +81,7 @@ class ParameterGenerator():
 
     def __init__(self, location='cerro-pachon', seed=None,
                  date_range=['2019-05-01', '2019-10-31'],
-                 gfs_file='data/gfswinds_cp_20190501-20191031.pkl',
+                 gfs_file='data/gfs_-30.0_289.5_20190501-20191031.pkl',
                  telemetry_file='data/tel_dict_CP_20190501-20191101.pkl'):
         """Initialize generator and process input data.
 
@@ -185,6 +187,8 @@ class ParameterGenerator():
         integer index pt.
         Keys are 'u' and 'v' for arrays of velocity components, 'speed' and
         'direction', and 'h' gives array of altitudes for all measurements.
+        The u/v components of velocity correspond to north/south winds,
+        respectively, and the wind direction is given as degrees west of north.
 
         """
         speed = np.hstack([self.telemetry['speed'][pt],
@@ -277,11 +281,12 @@ class ParameterGenerator():
 
         # interpolate the median speeds from GFS to find height of max
         all_speeds = [i for i in self.gfs_winds['speed'].values]
-        h_maxspd = utils.find_max_median(all_speeds, self.h_gfs, h_interp)
+        h_maxspd = utils.find_max_median(all_speeds, self.h_gfs,
+                                         h_interp, self.h0)
 
         # interpolate the median cn2 to find height of max
         all_cn2, h_cn2 = self.get_cn2_all()
-        h_maxcn2 = utils.find_max_median(all_cn2, h_cn2, h_interp)
+        h_maxcn2 = utils.find_max_median(all_cn2, h_cn2, h_interp, self.h0)
 
         # sort the heights of max speed and max turbulence
         h3, h4 = np.sort([h_maxspd, h_maxcn2])
@@ -289,7 +294,7 @@ class ParameterGenerator():
         # raise the lowest layer slightly off of the ground
         lowest = self.h0 + 0.250
 
-        h2 = np.mean([lowest, h4])
+        h2 = np.mean([lowest, h3])
         h5 = np.mean([h4, 18])
 
         return [lowest, h2, h3, h4, h5, 18]
@@ -351,7 +356,10 @@ class ParameterGenerator():
         turbulence maximums (default: 'auto').
 
         Returns: dict of parameters. Keys are 'j' for turbulence integrals,
-        'u','v','speed','direction' for wind parameters, and 'h' for altitudes
+        'u','v','speed','direction' for wind parameters, and 'h' for altitudes.
+        The u/v components of velocity correspond to north/south winds,
+        respectively, and the wind direction is given as degrees west of north.
+        The turbulence integrals have dimension m^[1/3].
         """
         pt = self._rng.integers(low=0, high=len(self.gfs_winds))
 
