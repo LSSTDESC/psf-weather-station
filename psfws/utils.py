@@ -7,7 +7,7 @@ from scipy.integrate import trapz
 
 
 def initialize_location(location):
-    """Given location identifier, return ground altitude and dome height.
+    """Given location identifier, return ground altitude and dome height in km.
 
     Parameters
     ----------
@@ -43,14 +43,15 @@ def ground_cn2_model(params, h):
     return 10**(logcn2)
 
 
-def find_max_median(x, h_old, h_new):
+def find_max_median(x, h_old, h_new, h0):
     """Find max of median of array x by interpolating datapoints."""
     # interpolate median x to smoothly spaced new h values
     x_median = np.median(x, axis=0)
     x_interp = interpolate(h_old, x_median, h_new, kind='cubic')
 
     # find maximum of interpolated x *above 2km*, to avoid ground effects
-    h_max = h_new[h_new > 2][np.argmax(x_interp[h_new > 2])]
+    max_index = np.argmax(x_interp[h_new > 2 + h0])
+    h_max = h_new[h_new > 2 + h0][max_index]
 
     return h_max
 

@@ -15,9 +15,6 @@ URL_BASE = pathlib.Path(url)
 PKG_BASE = pathlib.Path(__file__).resolve().parents[1].absolute()
 DATA_DIR = pathlib.Path.joinpath(PKG_BASE, 'data/')
 
-# move CWD to data directory for easier downloading/etc
-os.chdir(DATA_DIR)
-
 
 def _download_gfs_file(date, time):
     """Download a single GFS file according to date/time provided."""
@@ -169,5 +166,8 @@ if __name__ == '__main__':
     parser.add_argument('-d1', type=str)
     parser.add_argument('-d2', type=str)
     args = parser.parse_args()
+
+    # move CWD to data directory for easier downloading/etc
+    os.chdir(DATA_DIR)
 
     get_noaa_data(args.d1, args.d2, args.lat, args.long)
