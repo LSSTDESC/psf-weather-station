@@ -65,12 +65,16 @@ def process_telemetry(telemetry):
     """
     tel_dir = telemetry['wind_direction']
     tel_speed = telemetry['wind_speed']
+    tel_temp = telemetry['temperature']
 
     # find masks for telemetry values that are zero or, for speeds, >40
     speed_mask = tel_speed.index[tel_speed.apply(lambda x: x != 0 and x < 40)]
     dir_mask = tel_dir.index[tel_dir.apply(lambda x: x != 0)]
+    temp_mask = tel_temp.index[tel_temp.apply(lambda x: x != 0)]
 
-    return {'dir': tel_dir.loc[dir_mask], 'speed': tel_speed.loc[speed_mask]}
+    return {'dir': tel_dir.loc[dir_mask],
+            'speed': tel_speed.loc[speed_mask],
+            'temp': tel_temp.loc[temp_maskeee]}
 
 
 def to_direction(x, y):
@@ -89,11 +93,11 @@ def to_components(s, d):
 def process_gfs(gfs_df):
     """Return dataframe of processed global forecasting system data.
 
-    Input: dataframe of GFS obsevrations, columns = ['u', 'v']
-    Returns: dataframe of GFS observations, columns = ['u','v','speed','dir']
+    Input: dataframe of GFS obsevrations, cols = ['u', 'v', 't']
+    Returns: dataframe of GFS observations, cols = ['u','v','t','speed','dir']
 
     Processing steps:
-    - reverse u and v altitudes
+    - reverse u, v, and t altitudes
     - filter daytime datapoints
     - add "speed" and "dir" columns
     """
@@ -104,6 +108,7 @@ def process_gfs(gfs_df):
     # reverse, and disregard the top 5 altitudes
     gfs_df['u'] = [gfs_df['u'].values[i][::-1][:-5] for i in range(n)]
     gfs_df['v'] = [gfs_df['v'].values[i][::-1][:-5] for i in range(n)]
+    gfs_df['t'] = [gfs_df['t'].values[i][::-1][:-5] for i in range(n)]
 
     gfs_df['speed'] = [np.hypot(gfs_df['u'].values[i], gfs_df['v'].values[i])
                        for i in range(n)]
