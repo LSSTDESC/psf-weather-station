@@ -174,7 +174,7 @@ class ParameterGenerator():
 
         self.N = len(self.gfs)
 
-    def get_raw_wind(self, pt):
+    def get_raw_measurements(self, pt):
         """Get a matched set of wind measurements from datapoint with index pt.
 
         Parameters
@@ -184,10 +184,11 @@ class ParameterGenerator():
 
         Returns
         -------
-        dict of wind measurements, made of paired telemetry and GFS data for
-        integer index pt.
-        Keys are 'u' and 'v' for arrays of velocity components, 'speed' and
-        'direction', and 'h' gives array of altitudes for all measurements.
+        dict of wind and temperature measurements, made of paired telemetry and
+        GFS data for integer index pt.
+        Keys are 'u' and 'v' for arrays of velocity components, and 'speed' and
+        'direction', 'temp' for temperatures, and 'h' gives array of altitudes
+        for all measurements.
         The u/v components of velocity correspond to north/south winds,
         respectively, and the wind direction is given as degrees west of north.
 
@@ -200,10 +201,10 @@ class ParameterGenerator():
                               )
 
         u = np.hstack([self.telemetry['u'][pt],
-                       self.gfs.iloc[pt]['u'][self._gfs_stop:]])
+                      self.gfs.iloc[pt]['u'][self._gfs_stop:]])
 
         v = np.hstack([self.telemetry['v'][pt],
-                       self.gfs.iloc[pt]['v'][self._gfs_stop:]])
+                      self.gfs.iloc[pt]['v'][self._gfs_stop:]])
 
         height = np.hstack([self.h0, self.h_gfs[self._gfs_stop:]])
 
