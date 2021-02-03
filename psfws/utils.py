@@ -59,9 +59,10 @@ def find_max_median(x, h_old, h_new, h0):
 def process_telemetry(telemetry):
     """Return masked telemetry measurements of speed/direction.
 
-    Input and output are both dicts of pandas series of wind speeds/directions.
+    Input and output are both dicts of pandas series of wind speeds/directions/
+    temperatures.
     Values in output masked for zeros and speeds > 40m/s. Keys in output are
-    'speed' and 'dir'
+    'speed', 'dir', and 'temp'
     """
     tel_dir = telemetry['wind_direction']
     tel_speed = telemetry['wind_speed']
@@ -127,6 +128,7 @@ def match_telemetry(telemetry, gfs_dates):
 
     speed = telemetry['speed']
     direction = telemetry['dir']
+    temp = telemetry['temp']
 
     speed_ids = [speed.index[abs(gfs_dates[i] - speed.index)
                              < pd.Timedelta('30min')] for i in range(n_gfs)]
@@ -134,15 +136,23 @@ def match_telemetry(telemetry, gfs_dates):
     dir_ids = [direction.index[abs(gfs_dates[i] - direction.index)
                                < pd.Timedelta('30min')] for i in range(n_gfs)]
 
+    temp_ids = [temp.index[abs(gfs_dates[i] - temp.index)
+                           < pd.Timedelta('30min')] for i in range(n_gfs)]
+
     ids_to_keep = [i for i in range(n_gfs)
-                   if len(speed_ids[i]) != 0 and len(dir_ids[i]) != 0]
+                   if len(speed_ids[i]) != 0
+                   and len(dir_ids[i]) != 0
+                   and len(temp_ids[i]) != 0]
 
     matched_s = [np.median(speed.loc[speed_ids[i]])
                  for i in range(n_gfs) if i in ids_to_keep]
     matched_d = [np.median(direction.loc[dir_ids[i]])
                  for i in range(n_gfs) if i in ids_to_keep]
+    matched_t = [np.median(temp.loc[dir_ids[i]])
+                 for i in range(n_gfs) if i in ids_to_keep]
 
-    return np.array(matched_s), np.array(matched_d), gfs_dates[ids_to_keep]
+    return (np.array(matched_s), np.array(matched_d),
+            np.array(matched_t), gfs_dates[ids_to_keep])
 
 
 def interpolate(x, y, new_x, kind):

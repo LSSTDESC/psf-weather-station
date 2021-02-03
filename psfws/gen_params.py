@@ -21,7 +21,7 @@ class ParameterGenerator():
 
     Attributes
     ----------
-    gfs_winds : pandas dataframe
+    gfs : pandas dataframe
         GFS wind values (matched w telemetry), with DateTime as index and
         columns 'u', 'v', 'speed', 'dir'. Each entry in the DataFrame is a
         ndarray of values for each altitude, with speed/velocity components
@@ -30,7 +30,7 @@ class ParameterGenerator():
         is given as degrees west of north.
     telemetry : dict of ndarrays
         Keys: 'speed','dir', 'u', 'v'. Telemetry data, temporally matched to
-        GFS wind data: values in gfs_winds['u'].iloc[i] are in the same time
+        GFS wind data: values in gfs['u'].iloc[i] are in the same time
         bin as telemetry['u'][i].
     h_gfs : ndarray
         Altitudes of GFS datapoints, in km.
@@ -139,8 +139,8 @@ class ParameterGenerator():
 
     def _load_data(self):
         """Load and return data from GFS and telemetry pickle files."""
-        gfs_winds = pickle.load(open(self._file_paths['gfs_data'], 'rb'))
-        gfs_winds = utils.process_gfs(gfs_winds)
+        gfs = pickle.load(open(self._file_paths['gfs_data'], 'rb'))
+        gfs = utils.process_gfs(gfs)
 
         # order heights from small to large, and convert to km
         self.h_gfs = np.sort(np.load(open(self._file_paths['gfs_alts'],
@@ -149,29 +149,30 @@ class ParameterGenerator():
         raw_telemetry = pickle.load(open(self._file_paths['telemetry'], 'rb'))
         telemetry = utils.process_telemetry(raw_telemetry)
 
-        return gfs_winds, telemetry
+        return gfs, telemetry
 
     def _match_data(self, dr=['2019-05-01', '2019-10-31']):
         """Load data, temporally match telemetry to GFS, add as attribute."""
         # load in data
-        gfs_winds, telemetry = self._load_data()
+        gfs, telemetry = self._load_data()
 
         # first, find GFS dates within the date range desired
-        gfs_dates = gfs_winds[dr[0]:dr[1]].index
+        gfs_dates = gfs[dr[0]:dr[1]].index
 
         # this function returns median of measured speed/dir telemetry within
         # 30 mins of each GFS datapoint, when possible, and datetimes of these
-        spd_m, dir_m, dates_m = utils.match_telemetry(telemetry, gfs_dates)
+        spd_m, dir_m, t_m, dates_m = utils.match_telemetry(telemetry,
+                                                           gfs_dates)
 
         # calculate velocity componenents from the matched speed/directions
         uv_m = utils.to_components(spd_m, dir_m)
 
         # store results
-        self.telemetry = {'speed': spd_m, 'dir': dir_m,
+        self.telemetry = {'speed': spd_m, 'dir': dir_m, 'temp': t_m,
                           'u': uv_m['u'], 'v': uv_m['v']}
-        self.gfs_winds = gfs_winds.loc[dates_m]
+        self.gfs = gfs.loc[dates_m]
 
-        self.N = len(self.gfs_winds)
+        self.N = len(self.gfs)
 
     def get_raw_wind(self, pt):
         """Get a matched set of wind measurements from datapoint with index pt.
@@ -192,17 +193,17 @@ class ParameterGenerator():
 
         """
         speed = np.hstack([self.telemetry['speed'][pt],
-                           self.gfs_winds.iloc[pt]['speed'][self._gfs_stop:]])
+                           self.gfs.iloc[pt]['speed'][self._gfs_stop:]])
 
         direction = np.hstack([self.telemetry['dir'][pt],
-                               self.gfs_winds.iloc[pt]['dir'][self._gfs_stop:]]
+                               self.gfs.iloc[pt]['dir'][self._gfs_stop:]]
                               )
 
         u = np.hstack([self.telemetry['u'][pt],
-                       self.gfs_winds.iloc[pt]['u'][self._gfs_stop:]])
+                       self.gfs.iloc[pt]['u'][self._gfs_stop:]])
 
         v = np.hstack([self.telemetry['v'][pt],
-                       self.gfs_winds.iloc[pt]['v'][self._gfs_stop:]])
+                       self.gfs.iloc[pt]['v'][self._gfs_stop:]])
 
         height = np.hstack([self.h0, self.h_gfs[self._gfs_stop:]])
 
@@ -280,7 +281,7 @@ class ParameterGenerator():
         h_interp = np.linspace(self.h0 + self.h_dome, max(self.h_gfs), 500)
 
         # interpolate the median speeds from GFS to find height of max
-        all_speeds = [i for i in self.gfs_winds['speed'].values]
+        all_speeds = [i for i in self.gfs['speed'].values]
         h_maxspd = utils.find_max_median(all_speeds, self.h_gfs,
                                          h_interp, self.h0)
 
@@ -361,7 +362,7 @@ class ParameterGenerator():
         respectively, and the wind direction is given as degrees west of north.
         The turbulence integrals have dimension m^[1/3].
         """
-        pt = self._rng.integers(low=0, high=len(self.gfs_winds))
+        pt = self._rng.integers(low=0, high=len(self.gfs))
 
         j, _, layers = self.get_turbulence_integral(pt, layers='auto')
         params = self.get_wind_interpolation(pt, layers)
