@@ -156,7 +156,7 @@ def match_telemetry(telemetry, gfs_dates):
             np.array(matched_t), gfs_dates[ids_to_keep])
 
 
-def interpolate(x, y, new_x, ddz=False):
+def interpolate(x, y, new_x, ddz=True):
     """Interpolate 1D array y at values x to new_x values.
 
     Parameters
@@ -183,6 +183,37 @@ def interpolate(x, y, new_x, ddz=False):
         return f_y(new_x), dfydz(new_x)
     else:
         return f_y(new_x)
+
+
+def osborn(inputs, k=1):
+    """Calculate Cn2 model from Osborn et al 2018."""
+    g = 9.8
+
+    # theta and d/dz(theta)
+    theta, dthetaz = osborn_theta(inputs)
+
+    # wind shear => caclulate L(h)
+    windshear = inputs['dudz']**2 + inputs['dvdz']**2
+    lz = np.sqrt(2*thetaz / g * windshear / dthetaz)
+
+    numerator = 80e-6 * inputs['p'] * dthetaz
+    denominator = inputs['temp'] * thetaz
+
+    return k * lz**(4/3) * (numerator / denominator)**2
+
+
+def osborn_theta(inputs):
+    """Calculate potential temperature theta and its derivative."""
+    Rcp = 0.286
+    P0 = 1000 * 100  # mbar to Pa
+
+    theta = inputs['temp'] * (P0 / inputs['p'])**Rcp
+
+    amp = (P0/inputs['p'])**Rcp 
+    p_ratio = inputs['dpdz'] / inputs['p']
+    dthetaz = amp * (inputs['dtempdz'] - Rcp * inputs['temp'] * p_ratio)
+
+    return theta, dthetaz
 
 
 def hufnagel(z, v):
