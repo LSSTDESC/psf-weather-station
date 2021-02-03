@@ -2,7 +2,7 @@
 
 import numpy as np
 import pandas as pd
-from scipy.interpolate import interp1d
+from scipy.interpolate import UnivariateSpline
 from scipy.integrate import trapz
 
 
@@ -73,9 +73,10 @@ def process_telemetry(telemetry):
     dir_mask = tel_dir.index[tel_dir.apply(lambda x: x != 0)]
     temp_mask = tel_temp.index[tel_temp.apply(lambda x: x != 0)]
 
+    # return, converting temperatures to Kelvin from degrees Celsius
     return {'dir': tel_dir.loc[dir_mask],
             'speed': tel_speed.loc[speed_mask],
-            'temp': tel_temp.loc[temp_maskeee]}
+            'temp': tel_temp.loc[temp_maskeee] + 273.15}
 
 
 def to_direction(x, y):
@@ -109,7 +110,7 @@ def process_gfs(gfs_df):
     # reverse, and disregard the top 5 altitudes
     gfs_df['u'] = [gfs_df['u'].values[i][::-1][:-5] for i in range(n)]
     gfs_df['v'] = [gfs_df['v'].values[i][::-1][:-5] for i in range(n)]
-    gfs_df['t'] = [gfs_df['t'].values[i][::-1][:-5] for i in range(n)]
+    gfs_df['temp'] = [gfs_df['t'].values[i][::-1][:-5] for i in range(n)]
 
     gfs_df['speed'] = [np.hypot(gfs_df['u'].values[i], gfs_df['v'].values[i])
                        for i in range(n)]
@@ -155,7 +156,7 @@ def match_telemetry(telemetry, gfs_dates):
             np.array(matched_t), gfs_dates[ids_to_keep])
 
 
-def interpolate(x, y, new_x, kind):
+def interpolate(x, y, new_x, ddz=False):
     """Interpolate 1D array y at values x to new_x values.
 
     Parameters
@@ -166,25 +167,22 @@ def interpolate(x, y, new_x, kind):
         1D array to interpolate
     new_x : array
         x values of desired interpolated output
-    kind : str
-        Perform either 'cubic' or 'gp' interpolation
+    ddz : bool
+        Whether or not to return the derivative of y wrt z
 
     Returns
     -------
         new_y, interpolated values of y at positions new_x
+        dydz, derivative of new_y at positions new_x, if ddz=True
 
     """
-    if kind == 'cubic':
-        f_y = interp1d(x, y, kind='cubic')
-        new_y = f_y(new_x)
-    elif kind == 'gp':
-        from sklearn import gaussian_process
-        gp = gaussian_process.GaussianProcessRegressor(normalize_y=True,
-                                                       alpha=1e-3,
-                                                       n_restarts_optimizer=5)
-        gp.fit(x.reshape(-1, 1), y.reshape(-1, 1))
-        new_y = gp.predict(new_x.reshape(-1, 1))
-    return new_y
+    f_y = UnivariateSpline(x, y)
+
+    if ddz:
+        dfydz = f_y.derivative()
+        return f_y(new_x), dfydz(new_x)
+    else:
+        return f_y(new_x)
 
 
 def hufnagel(z, v):
