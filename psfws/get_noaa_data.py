@@ -41,7 +41,7 @@ def _delete_gfs_file(date, time):
         print("Error: %s : %s" % (file_path, e.strerror))
 
 
-def _load_uvt(date, time, latitude=-30, longitude=289.5):
+def _load_uvtp(date, time, latitude=-30, longitude=289.5):
     """Load U and V componenents of wind for GFS file given date and time."""
     # do not want pygrib to be a dependency for the whole psfws package.
     import pygrib
@@ -82,7 +82,10 @@ def _load_uvt(date, time, latitude=-30, longitude=289.5):
                 outs[i-1] = d[np.where((lat == latitude) &
                                        (lon == longitude))][0]
 
-        return u_values, v_values, t_values
+        # extract pressure (same level for all of u, v, and t):
+        p_values = np.array([grb['level'] for grb in temp])
+
+        return {'u': u_values, 'v': v_values, 't': t_values, 'p': p_values}
 
 
 def _datetime_range(start_date, end_date):
@@ -137,10 +140,10 @@ def get_noaa_data(start_date, end_date, lat, lon):
         _download_gfs_file(d, h)
 
         # process to extract u/v wind info
-        out = _load_uvt(d, h, lat, lon)
+        out = _load_uvtp(d, h, lat, lon)
 
         if out is not None:
-            value_dicts.append({'u': out[0], 'v': out[1], 't': out[2]})
+            value_dicts.append(out)
             timestamps.append(timestamp)
 
         # no longer need this file, delete to save disc space:
