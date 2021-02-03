@@ -41,7 +41,7 @@ def _delete_gfs_file(date, time):
         print("Error: %s : %s" % (file_path, e.strerror))
 
 
-def _load_uv(date, time, latitude=-30, longitude=289.5):
+def _load_uvt(date, time, latitude=-30, longitude=289.5):
     """Load U and V componenents of wind for GFS file given date and time."""
     # do not want pygrib to be a dependency for the whole psfws package.
     import pygrib
@@ -56,6 +56,7 @@ def _load_uv(date, time, latitude=-30, longitude=289.5):
     # select relevant variables
     uwind = grbs.select(name='U component of wind')
     vwind = grbs.select(name='V component of wind')
+    temp = grbs.select(name='Temperature')
 
     # check whether wind information exists in file
     if len(uwind) < 32:
@@ -64,28 +65,24 @@ def _load_uv(date, time, latitude=-30, longitude=289.5):
     else:
         u_values = np.zeros(31)
         v_values = np.zeros(31)
+        t_values = np.zeros(31)
 
         # set location range
         approx_lat = [latitude-0.5, latitude+0.5]
         approx_long = [longitude-0.5, longitude+0.5]
 
         # extract u and v values at specificc lat/long for each altitude
-        for i in range(1, 32):
-            d, lat, lon = uwind[i].data(lat1=approx_lat[0],
-                                        lat2=approx_lat[1],
-                                        lon1=approx_long[0],
-                                        lon2=approx_long[1])
-            u_values[i-1] = d[np.where((lat == latitude) &
+        for ins, outs in zip([uwind, vwind, temp],
+                             [u_values, v_values, t_values]):
+            for i in range(1, 32):
+                d, lat, lon = ins[i].data(lat1=approx_lat[0],
+                                          lat2=approx_lat[1],
+                                          lon1=approx_long[0],
+                                          lon2=approx_long[1])
+                outs[i-1] = d[np.where((lat == latitude) &
                                        (lon == longitude))][0]
 
-            d, lat, lon = vwind[i].data(lat1=approx_lat[0],
-                                        lat2=approx_lat[1],
-                                        lon1=approx_long[0],
-                                        lon2=approx_long[1])
-            v_values[i-1] = d[np.where((lat == latitude) &
-                                       (lon == longitude))][0]
-
-        return u_values, v_values
+        return u_values, v_values, t_values
 
 
 def _datetime_range(start_date, end_date):
@@ -140,22 +137,22 @@ def get_noaa_data(start_date, end_date, lat, lon):
         _download_gfs_file(d, h)
 
         # process to extract u/v wind info
-        out = _load_uv(d, h, lat, lon)
+        out = _load_uvt(d, h, lat, lon)
 
         if out is not None:
-            value_dicts.append({'u': out[0], 'v': out[1]})
+            value_dicts.append({'u': out[0], 'v': out[1], 't': out[2]})
             timestamps.append(timestamp)
 
         # no longer need this file, delete to save disc space:
         _delete_gfs_file(d, h)
 
     # put all the u/v data into dataframe
-    uv_df = pd.DataFrame(value_dicts, index=timestamps)
+    uvt_df = pd.DataFrame(value_dicts, index=timestamps)
 
     save_file = f'gfs_{lat}_{lon}_{start_date}-{end_date}.pkl'
     save_path = pathlib.Path.joinpath(DATA_DIR, save_file)
 
-    pickle.dump(uv_df, open(save_file, 'wb'))
+    pickle.dump(uvt_df, open(save_file, 'wb'))
 
 
 if __name__ == '__main__':
