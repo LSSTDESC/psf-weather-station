@@ -126,16 +126,13 @@ def process_gfs(gfs_df):
 
 def pressure_to_h(p):
     """Convert array of pressure values to altitude."""
+    M = 28.96  # average mol. mass of atmosphere, in g/mol
+    g = 9.8  # accelerationg at the surface
+    R = 8.314  # gas constant, in J/mol/K
+    T0 = 290  # average surface temperature, in K
+    P0 = 101315  # pressure at sea level, in Pa
 
-    ## FINISH THIS ##
-    # make sure I figure out what the units of the ouputs are!!
-    
-    M = 
-    g = 
-    R = 
-    T0 =
-
-    return (R * T0) / (M * g) * np.log(p[0] / p)
+    return (R * T0) / (M * g) * np.log(P0 / p)
 
 
 def match_telemetry(telemetry, gfs_dates):
@@ -267,7 +264,7 @@ def integrate_in_bins(cn2, h, edges):
         h_i = h_samples[(h_samples < edges[i+1] * 1000) &
                         (h_samples > edges[i] * 1000)]
         # get Cn2 interpolation at those values of h
-        cn2_i = np.exp(interpolate(h * 1000, np.log(cn2), h_i, kind='cubic'))
+        cn2_i = np.exp(interpolate(h * 1000, np.log(cn2), h_i, ddz=False))
         # numerically integrate to find the J value for this bin
         J.append(trapz(cn2_i, h_i))
 
