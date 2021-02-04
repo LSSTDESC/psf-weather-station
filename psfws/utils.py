@@ -95,8 +95,9 @@ def to_components(s, d):
 def process_gfs(gfs_df):
     """Return dataframe of processed global forecasting system data.
 
-    Input: dataframe of GFS obsevrations, cols = ['u', 'v', 't']
-    Returns: dataframe of GFS observations, cols = ['u','v','t','speed','dir']
+    Input: dataframe of GFS obsevrations, cols = ['u', 'v', 't', 'p']
+    Returns: dataframe of GFS observations,
+             cols = ['u', 'v', 't', 'p', 'speed', 'dir']
 
     Processing steps:
     - reverse u, v, and t altitudes
@@ -108,16 +109,33 @@ def process_gfs(gfs_df):
     n = len(gfs_df)
 
     # reverse, and disregard the top 5 altitudes
-    gfs_df['u'] = [gfs_df['u'].values[i][::-1][:-5] for i in range(n)]
-    gfs_df['v'] = [gfs_df['v'].values[i][::-1][:-5] for i in range(n)]
-    gfs_df['temp'] = [gfs_df['t'].values[i][::-1][:-5] for i in range(n)]
+    for k in ['u', 'v', 't', 'p']:
+        gfs_df[k] = [gfs_df[k].values[i][::-1][:-5] for i in range(n)]
 
     gfs_df['speed'] = [np.hypot(gfs_df['u'].values[i], gfs_df['v'].values[i])
                        for i in range(n)]
 
     gfs_df['dir'] = [to_direction(gfs_df['v'].values[i], gfs_df['u'].values[i])
                      for i in range(n)]
-    return gfs_df
+
+    # all data have the same pressures, so just take first
+    h_gfs = pressure_to_h(gfs_df['p']).values[0]
+
+    return gfs_df, h_gfs
+
+
+def pressure_to_h(p):
+    """Convert array of pressure values to altitude."""
+
+    ## FINISH THIS ##
+    # make sure I figure out what the units of the ouputs are!!
+    
+    M = 
+    g = 
+    R = 
+    T0 =
+
+    return (R * T0) / (M * g) * np.log(p[0] / p)
 
 
 def match_telemetry(telemetry, gfs_dates):
@@ -209,7 +227,7 @@ def osborn_theta(inputs):
 
     theta = inputs['temp'] * (P0 / inputs['p'])**Rcp
 
-    amp = (P0/inputs['p'])**Rcp 
+    amp = (P0/inputs['p'])**Rcp
     p_ratio = inputs['dpdz'] / inputs['p']
     dthetaz = amp * (inputs['dtempdz'] - Rcp * inputs['temp'] * p_ratio)
 

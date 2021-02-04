@@ -117,7 +117,6 @@ class ParameterGenerator():
 
         self._file_paths = \
             {'gfs_data': pathlib.Path.joinpath(psfws_base, gfs_file),
-             'gfs_alts': pathlib.Path.joinpath(psfws_base, 'data/H.npy'),
              'telemetry': pathlib.Path.joinpath(psfws_base, telemetry_file)}
 
         for file_path in self._file_paths.values():
@@ -140,11 +139,7 @@ class ParameterGenerator():
     def _load_data(self):
         """Load and return data from GFS and telemetry pickle files."""
         gfs = pickle.load(open(self._file_paths['gfs_data'], 'rb'))
-        gfs = utils.process_gfs(gfs)
-
-        # order heights from small to large, and convert to km
-        self.h_gfs = np.sort(np.load(open(self._file_paths['gfs_alts'],
-                                          'rb'))) / 1000
+        gfs, self.h_gfs = utils.process_gfs(gfs)
 
         raw_telemetry = pickle.load(open(self._file_paths['telemetry'], 'rb'))
         telemetry = utils.process_telemetry(raw_telemetry)
@@ -175,7 +170,7 @@ class ParameterGenerator():
         self.N = len(self.gfs)
 
     def get_raw_measurements(self, pt):
-        """Get a matched set of wind measurements from datapoint with index pt.
+        """Get a matched set of measurements from datapoint with index pt.
 
         Parameters
         ----------
@@ -198,7 +193,7 @@ class ParameterGenerator():
         direction = np.hstack([self.telemetry['dir'][pt],
                                self.gfs.iloc[pt]['dir'][self._gfs_stop:]])
         temperature = np.hstack([self.telemetry['temp'][pt],
-                                 self.gfs.iloc[pt]['temp'][self._gfs_stop:]])
+                                 self.gfs.iloc[pt]['t'][self._gfs_stop:]])
 
         u = np.hstack([self.telemetry['u'][pt],
                       self.gfs.iloc[pt]['u'][self._gfs_stop:]])
@@ -208,18 +203,25 @@ class ParameterGenerator():
 
         height = np.hstack([self.h0, self.h_gfs[self._gfs_stop:]])
 
-        return {'u': u, 'v': v, 'speed': speed, 'temp': temperature,
-                'direction': utils.smooth_direction(direction), 'h': height}
+        return {'u': u, 'v': v, 'speed': speed, 't': temperature, 'h': height,
+                'direction': utils.smooth_direction(direction)}
 
-    def _interpolate_wind(self, p_dict, h_out, kind='gp'):
-        """Return new wind dict, vals interpolated to new heights h_out."""
-        new_u = utils.interpolate(p_dict['h'], p_dict['u'], h_out, kind)
-        new_v = utils.interpolate(p_dict['h'], p_dict['v'], h_out, kind)
+    def _interpolate(self, p_dict, h_out):
+        """Get interpolations & derivatives of params at new heights h_out."""
+        out = {}
+        for k in ['u', 'v', 't', 'p']:
+            out[k], out[f'd{k}dz'] = utils.interpolate(p_dict['h'],
+                                                       p_dict[k], h_out)
 
-        new_direction = utils.to_direction(new_v, new_u)
+        # special case:
+        out['p'], out['dpdz'] = utils.interpolate(self.h_gfs,
+                                                  p_dict['p'], h_out)
+        out['direction'] = utils.smooth_direction(utils.to_direction(out['v'],
+                                                                     out['u']))
+        out['speed'] = np.hypot(out['u'], out['v'])
+        out['h'] = h_out
 
-        return {'u': new_u, 'v': new_v, 'speed': np.hypot(new_u, new_v),
-                'direction': utils.smooth_direction(new_direction), 'h': h_out}
+        return out
 
     def _draw_ground_cn2(self):
         """Return ground Cn2 model, with parameters randomly drawn.
@@ -243,36 +245,43 @@ class ParameterGenerator():
         return utils.ground_cn2_model({'A': a, 'p': p},
                                       h_gl), self.h0 + h_gl/1000
 
-    def get_cn2(self, pt):
+    def get_cn2(self, pt, model='osborn'):
         """Get Cn2 and h arrays for datapoint with index pt.
 
         Use Hufnagel model and GFS winds to calculate a Cn2 profile above 3km,
         stacked with a ground layer model draw.
         """
         # pick out relevant wind data
-        raw_winds = self.get_raw_measurements(pt)
+        raw_p = self.get_raw_measurements(pt)
 
-        # make a vector of heights where hufnagel will be valid
-        h_huf = np.linspace(self.h0 + 3, max(self.h_gfs), 100)
-        # interpolate wind data to those heights
-        speed_huf = self._interpolate_wind(raw_winds, h_huf)['speed'].flatten()
-        # calculate hufnagel cn2 for those
-        cn2_huf = utils.hufnagel(h_huf, speed_huf)
+        if model == 'osborn':
+            # not sure whether I want to have this set or as an input??
+            h_complete = np.linspace(self.h0+self.h_dome, max(self.h_gfs), 500)
+            inputs = self._interpolate(raw_p, h_complete)
+            cn2_complete = utils.osborn(inputs)
 
-        # draw model of ground turbulence
-        cn2_gl, h_gl = self._draw_ground_cn2()
+        else:
+            # make a vector of heights where hufnagel will be valid
+            h_huf = np.linspace(self.h0 + 3, max(self.h_gfs), 100)
+            # interpolate wind data to those heights
+            speed_huf = self._interpolate(raw_winds, h_huf)['speed'].flatten()
+            # calculate hufnagel cn2 for those
+            cn2_huf = utils.hufnagel(h_huf, speed_huf)
 
-        cn2_complete = np.hstack([cn2_gl, cn2_huf])
-        h_complete = np.hstack([h_gl, h_huf])
+            # draw model of ground turbulence
+            cn2_gl, h_gl = self._draw_ground_cn2()
+
+            cn2_complete = np.hstack([cn2_gl, cn2_huf])
+            h_complete = np.hstack([h_gl, h_huf])
 
         # return stacked hufnagel and ground layer profiles/altitudes
         return cn2_complete, h_complete
 
-    def get_cn2_all(self):
+    def get_cn2_all(self, model='osborn'):
         """Get array of Cn2 values for all data available."""
         cn2_list = []
         for i in range(self.N):
-            cn2, h = self.get_cn2(i)
+            cn2, h = self.get_cn2(i, model=model)
             cn2_list.append(cn2)
         return np.array(cn2_list), h
 
@@ -337,20 +346,20 @@ class ParameterGenerator():
         # return along with edges and bin centers
         return j, np.array(edges), np.array(bin_centers)
 
-    def get_turbulence_integral(self, pt, layers='auto'):
+    def get_turbulence_integral(self, pt, model='osborn', layers='auto'):
         """Return integrated Cn2 profile for datapoint with index pt."""
         # get cn2 of pt
-        cn2, h = self.get_cn2(pt)
+        cn2, h = self.get_cn2(pt, model=model)
 
         # return integrated cn2
         return self._integrate_cn2(cn2, h, layers=layers)
 
-    def get_wind_interpolation(self, pt, h_out, kind='gp'):
+    def get_param_interpolation(self, pt, h_out):
         """Return winds for dataset with index pt interpolated to h_out."""
-        wind_dict = self.get_raw_measurements(pt)
-        return self._interpolate_wind(wind_dict, h_out, kind=kind)
+        p_dict = self.get_raw_measurements(pt)
+        return self._interpolate(p_dict, h_out)
 
-    def draw_parameters(self, layers='auto'):
+    def draw_parameters(self, cn2model='osborn', layers='auto'):
         """Draw a random, full set of parameters.
 
         Parameters: layers sets output altitudes; either array of values, or
@@ -365,7 +374,8 @@ class ParameterGenerator():
         """
         pt = self._rng.integers(low=0, high=len(self.gfs))
 
-        j, _, layers = self.get_turbulence_integral(pt, layers='auto')
+        j, _, layers = self.get_turbulence_integral(pt, model=cn2model,
+                                                    layers='auto')
         params = self.get_wind_interpolation(pt, layers)
 
         params['j'] = j
