@@ -76,7 +76,7 @@ def process_telemetry(telemetry):
     # return, converting temperatures to Kelvin from degrees Celsius
     return {'dir': tel_dir.loc[dir_mask],
             'speed': tel_speed.loc[speed_mask],
-            'temp': tel_temp.loc[temp_maskeee] + 273.15}
+            'temp': tel_temp.loc[temp_mask] + 273.15}
 
 
 def to_direction(x, y):
@@ -119,7 +119,7 @@ def process_gfs(gfs_df):
                      for i in range(n)]
 
     # all data have the same pressures, so just take first
-    h_gfs = pressure_to_h(gfs_df['p']).values[0]
+    h_gfs = pressure_to_h(gfs_df['p'].values[0])
 
     return gfs_df, h_gfs
 
@@ -130,7 +130,7 @@ def pressure_to_h(p):
     g = 9.8  # accelerationg at the surface
     R = 8.314  # gas constant, in J/mol/K
     T0 = 290  # average surface temperature, in K
-    P0 = 101315  # pressure at sea level, in Pa
+    P0 = 1013  # pressure at sea level, in Pa
 
     return (R * T0) / (M * g) * np.log(P0 / p)
 
@@ -164,7 +164,7 @@ def match_telemetry(telemetry, gfs_dates):
                  for i in range(n_gfs) if i in ids_to_keep]
     matched_d = [np.median(direction.loc[dir_ids[i]])
                  for i in range(n_gfs) if i in ids_to_keep]
-    matched_t = [np.median(temp.loc[dir_ids[i]])
+    matched_t = [np.median(temp.loc[temp_ids[i]])
                  for i in range(n_gfs) if i in ids_to_keep]
 
     return (np.array(matched_s), np.array(matched_d),
@@ -191,7 +191,7 @@ def interpolate(x, y, new_x, ddz=True):
         dydz, derivative of new_y at positions new_x, if ddz=True
 
     """
-    f_y = UnivariateSpline(x, y)
+    f_y = UnivariateSpline(x, y, s=0)
 
     if ddz:
         dfydz = f_y.derivative()
@@ -205,14 +205,14 @@ def osborn(inputs, k=1):
     g = 9.8
 
     # theta and d/dz(theta)
-    theta, dthetaz = osborn_theta(inputs)
+    thetaz, dthetaz = osborn_theta(inputs)
 
     # wind shear => caclulate L(h)
     windshear = inputs['dudz']**2 + inputs['dvdz']**2
     lz = np.sqrt(2*thetaz / g * windshear / dthetaz)
 
     numerator = 80e-6 * inputs['p'] * dthetaz
-    denominator = inputs['temp'] * thetaz
+    denominator = inputs['t'] * thetaz
 
     return k * lz**(4/3) * (numerator / denominator)**2
 
@@ -222,11 +222,11 @@ def osborn_theta(inputs):
     Rcp = 0.286
     P0 = 1000 * 100  # mbar to Pa
 
-    theta = inputs['temp'] * (P0 / inputs['p'])**Rcp
+    theta = inputs['t'] * (P0 / inputs['p'])**Rcp
 
     amp = (P0/inputs['p'])**Rcp
     p_ratio = inputs['dpdz'] / inputs['p']
-    dthetaz = amp * (inputs['dtempdz'] - Rcp * inputs['temp'] * p_ratio)
+    dthetaz = amp * (inputs['dtdz'] - Rcp * inputs['t'] * p_ratio)
 
     return theta, dthetaz
 

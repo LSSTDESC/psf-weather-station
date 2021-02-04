@@ -25,7 +25,6 @@ def _download_gfs_file(date, time):
     dl_local = pathlib.Path.joinpath(DATA_DIR, gfs_file)
 
     # download the thing!
-    print(dl_link.as_posix())
     os.system(f"curl -O {dl_link.as_posix()}")
 
 
@@ -83,7 +82,7 @@ def _load_uvtp(date, time, latitude=-30, longitude=289.5):
                                        (lon == longitude))][0]
 
         # extract pressure (same level for all of u, v, and t):
-        p_values = np.array([grb['level'] for grb in temp])
+        p_values = np.array([grb['level'] for grb in temp][:31])
 
         return {'u': u_values, 'v': v_values, 't': t_values, 'p': p_values}
 
