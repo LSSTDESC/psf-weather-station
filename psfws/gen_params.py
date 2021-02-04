@@ -195,10 +195,10 @@ class ParameterGenerator():
         """
         speed = np.hstack([self.telemetry['speed'][pt],
                            self.gfs.iloc[pt]['speed'][self._gfs_stop:]])
-
         direction = np.hstack([self.telemetry['dir'][pt],
-                               self.gfs.iloc[pt]['dir'][self._gfs_stop:]]
-                              )
+                               self.gfs.iloc[pt]['dir'][self._gfs_stop:]])
+        temperature = np.hstack([self.telemetry['temp'][pt],
+                                 self.gfs.iloc[pt]['temp'][self._gfs_stop:]])
 
         u = np.hstack([self.telemetry['u'][pt],
                       self.gfs.iloc[pt]['u'][self._gfs_stop:]])
@@ -208,7 +208,7 @@ class ParameterGenerator():
 
         height = np.hstack([self.h0, self.h_gfs[self._gfs_stop:]])
 
-        return {'u': u, 'v': v, 'speed': speed,
+        return {'u': u, 'v': v, 'speed': speed, 'temp': temperature,
                 'direction': utils.smooth_direction(direction), 'h': height}
 
     def _interpolate_wind(self, p_dict, h_out, kind='gp'):
@@ -250,7 +250,7 @@ class ParameterGenerator():
         stacked with a ground layer model draw.
         """
         # pick out relevant wind data
-        raw_winds = self.get_raw_wind(pt)
+        raw_winds = self.get_raw_measurements(pt)
 
         # make a vector of heights where hufnagel will be valid
         h_huf = np.linspace(self.h0 + 3, max(self.h_gfs), 100)
@@ -347,7 +347,7 @@ class ParameterGenerator():
 
     def get_wind_interpolation(self, pt, h_out, kind='gp'):
         """Return winds for dataset with index pt interpolated to h_out."""
-        wind_dict = self.get_raw_wind(pt)
+        wind_dict = self.get_raw_measurements(pt)
         return self._interpolate_wind(wind_dict, h_out, kind=kind)
 
     def draw_parameters(self, layers='auto'):
