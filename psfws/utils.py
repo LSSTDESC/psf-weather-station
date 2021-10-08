@@ -2,9 +2,41 @@
 
 import numpy as np
 import pandas as pd
-from scipy.interpolate import UnivariateSpline
+from scipy.interpolate import UnivariateSpline, make_interp_spline
 from scipy.integrate import trapz
+from csaps import CubicSmoothingSpline
 
+
+def correlate_marginals(x, y, rho):
+    """
+    Takes two marginal distrubtions, x and y, and returns a joint PDF with
+    specified correlation coefficient rho. Also returns resulting correlation.
+    """
+    x_srtd = np.sort(x)
+    y_srtd = np.sort(y)
+
+    # 15 is ad hoc; seems to work to ensure loops through x at least once
+    swap_window = (x_srtd[-1]-x_srtd[0]) / 15
+    N = len(x)
+
+    # loop ten times over the dataset
+    for i in range(10 * N):
+        # index of the first pair in a swap
+        i_first = i % N
+        # find list of points within the swap_window of this first point
+        valid_indices = np.argwhere(abs(x_srtd - x_srtd[i_first]) < swap_window)
+        # randomly chose one of these as the swap pair
+        i_swap = np.random.choice(valid_indices)
+        # swap entries
+        x_srtd[i_first], x_srtd[i_swap] = x_srtd[i_swap], x_srtd[i_first]
+
+        if np.corrcoeff(x_srtd, y_srtd)[0][1] < rho:
+            break
+
+    if np.corrcoeff(x_srtd, y_srtd)[0][1] > rho:
+        raise ValueError('did not reach desired correlation coefficient!')
+
+    return x_srtd, y_srtd, np.corrcoeff(x_srtd, y_srtd)[0][1]
 
 def initialize_location(location):
     """Given location identifier, return ground altitude and dome height in km.
@@ -46,8 +78,10 @@ def ground_cn2_model(params, h):
 def find_max_median(x, h_old, h_new, h0):
     """Find max of median of array x by interpolating datapoints."""
     # interpolate median x to smoothly spaced new h values
-    x_median = np.median(x, axis=0)
-    x_interp = interpolate(h_old, x_median, h_new, kind='cubic')
+    if len(np.array(x).shape) >= 2:
+        x = np.median(x, axis=0)
+
+    x_interp = interpolate(h_old, x, h_new, ddz=False)
 
     # find maximum of interpolated x *above 2km*, to avoid ground effects
     max_index = np.argmax(x_interp[h_new > 2 + h0])
@@ -118,21 +152,22 @@ def process_gfs(gfs_df):
     gfs_df['dir'] = [to_direction(gfs_df['v'].values[i], gfs_df['u'].values[i])
                      for i in range(n)]
 
-    # all data have the same pressures, so just take first
-    h_gfs = pressure_to_h(gfs_df['p'].values[0])
-
+    # find altitudes of GFS outputs; all data have same pressures, so take first
+    median_t = np.median([gfs_df['t'].values[i] for i in range(n)], axis=0)
+    h_gfs = pressure_to_h(gfs_df['p'].values[0], median_t)
+    # gfs_df['h'] = [pressure_to_h(gfs_df['p'].values[0], 
+    #                              gfs_df['t'].values[i]) for i in range(n)]
     return gfs_df, h_gfs
 
 
-def pressure_to_h(p):
-    """Convert array of pressure values to altitude."""
+def pressure_to_h(p, t):
+    """Convert array of pressure and temperature values to altitude."""
     M = 28.96  # average mol. mass of atmosphere, in g/mol
     g = 9.8  # accelerationg at the surface
     R = 8.314  # gas constant, in J/mol/K
-    T0 = 290  # average surface temperature, in K
-    P0 = 1013  # pressure at sea level, in Pa
+    P0 = 1013  # pressure at sea level, in hPa (=mbar)
 
-    return (R * T0) / (M * g) * np.log(P0 / p)
+    return (R * t) / (M * g) * np.log(P0 / p)
 
 
 def match_telemetry(telemetry, gfs_dates):
@@ -171,7 +206,7 @@ def match_telemetry(telemetry, gfs_dates):
             np.array(matched_t), gfs_dates[ids_to_keep])
 
 
-def interpolate(x, y, new_x, ddz=True):
+def interpolate(x, y, new_x, ddz=True, extend=True):
     """Interpolate 1D array y at values x to new_x values.
 
     Parameters
@@ -191,13 +226,29 @@ def interpolate(x, y, new_x, ddz=True):
         dydz, derivative of new_y at positions new_x, if ddz=True
 
     """
-    f_y = UnivariateSpline(x, y, s=0)
-
-    if ddz:
-        dfydz = f_y.derivative()
-        return f_y(new_x), dfydz(new_x)
+    if extend:
+        # make a spline and fix constant first derivative at the boundary
+        # spline = make_interp_spline(x, y, bc_type='natural')
+        # # get the spline extrapolation above/below data region (ok bc f'=const)
+        # delta_x = x[1]-x[0]
+        # x_below = np.linspace(x[0]-2*delta_x, x[0], 20)
+        # x_above = np.linspace(x[-1], x[-1]+2*delta_x, 20)
+        # y = np.concatenate([spline(x_below), y, spline(x_above)])
+        # x = np.concatenate([x_below, x, x_above])
+        s = CubicSmoothingSpline(x, y, smooth=None).spline
+        if ddz: 
+            return s(new_x), s.derivative(nu=1)(new_x)
+        else: 
+            return s(new_x)
     else:
-        return f_y(new_x)
+        # now use a smoothing spline
+        f_y = UnivariateSpline(x, y, s=s)
+
+        if ddz:
+            dfydz = f_y.derivative()
+            return f_y(new_x), dfydz(new_x)
+        else:
+            return f_y(new_x)
 
 
 def osborn(inputs, k=1):
@@ -209,7 +260,7 @@ def osborn(inputs, k=1):
 
     # wind shear => caclulate L(h)
     windshear = inputs['dudz']**2 + inputs['dvdz']**2
-    lz = np.sqrt(2*thetaz / g * windshear / dthetaz)
+    lz = np.sqrt(2*thetaz / g * windshear / abs(dthetaz))
 
     numerator = 80e-6 * inputs['p'] * dthetaz
     denominator = inputs['t'] * thetaz
