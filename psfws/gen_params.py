@@ -201,21 +201,20 @@ class ParameterGenerator():
         v = np.hstack([self.telemetry['v'][pt],
                       self.gfs.iloc[pt]['v'][self._gfs_stop:]])
 
-        height = np.hstack([self.h0, self.h_gfs[self._gfs_stop:]])
-
-        return {'u': u, 'v': v, 'speed': speed, 't': temperature, 'h': height,
-                'direction': utils.smooth_direction(direction)}
-
-    def _interpolate(self, p_dict, h_out):
+    def _interpolate(self, p_dict, h_out, extend=True):
         """Get interpolations & derivatives of params at new heights h_out."""
+        # Note: multipying everything by 1000 (to m) because of the derivatives. 
         out = {}
-        for k in ['u', 'v', 't', 'p']:
-            out[k], out[f'd{k}dz'] = utils.interpolate(p_dict['h'],
-                                                       p_dict[k], h_out)
+        for k in ['u', 'v', 't']:
+            out[k], out[f'd{k}dz'] = utils.interpolate(p_dict['h'] * 1000,
+                                                       p_dict[k], 
+                                                       h_out * 1000,
+                                                       extend=extend)
 
         # special case:
-        out['p'], out['dpdz'] = utils.interpolate(self.h_gfs,
-                                                  p_dict['p'], h_out)
+        out['p'], out['dpdz'] = utils.interpolate(self.h_gfs * 1000,
+                                                  p_dict['p'], 
+                                                  h_out * 1000)
         out['direction'] = utils.smooth_direction(utils.to_direction(out['v'],
                                                                      out['u']))
         out['speed'] = np.hypot(out['u'], out['v'])
@@ -256,8 +255,8 @@ class ParameterGenerator():
 
         if model == 'osborn':
             # not sure whether I want to have this set or as an input??
-            h_complete = np.linspace(self.h0+self.h_dome, max(self.h_gfs), 500)
-            inputs = self._interpolate(raw_p, h_complete)
+        inputs = self._interpolate(raw_p, h_complete)
+        cn2_complete = utils.osborn(inputs)
             cn2_complete = utils.osborn(inputs)
 
         else:
@@ -354,10 +353,10 @@ class ParameterGenerator():
         # return integrated cn2
         return self._integrate_cn2(cn2, h, layers=layers)
 
-    def get_param_interpolation(self, pt, h_out):
+    def get_param_interpolation(self, pt, h_out, extend=True):
         """Return winds for dataset with index pt interpolated to h_out."""
         p_dict = self.get_raw_measurements(pt)
-        return self._interpolate(p_dict, h_out)
+        return self._interpolate(p_dict, h_out, extend)
 
     def draw_parameters(self, cn2model='osborn', layers='auto'):
         """Draw a random, full set of parameters.
@@ -375,7 +374,7 @@ class ParameterGenerator():
         pt = self._rng.integers(low=0, high=len(self.gfs))
 
         j, _, layers = self.get_turbulence_integral(pt, model=cn2model,
-                                                    layers='auto')
+        params = self.get_param_interpolation(pt, layers)
         params = self.get_wind_interpolation(pt, layers)
 
         params['j'] = j
