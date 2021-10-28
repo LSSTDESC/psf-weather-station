@@ -5,68 +5,97 @@ import pandas as pd
 from scipy.interpolate import UnivariateSpline, make_interp_spline
 from scipy.integrate import trapz
 from csaps import CubicSmoothingSpline
+import scipy.stats
 
 
-def correlate_marginals(x, y, rho):
+def lognorm(sigma, scale):
+    """Return a scipy stats lognorm defined by parameters sigma and scale.
+
+    Scale = exp(mu) for mu the mean of the normally distributed variable X such
+    that Y=exp(X), and sigma is the standard deviation of X."""
+    return scipy.stats.lognorm(s=sigma, scale=scale)
+
+def correlate_marginals(X, y, rho):
     """
     Takes two marginal distrubtions, x and y, and returns a joint PDF with
     specified correlation coefficient rho. Also returns resulting correlation.
+
+    Parameters
+    ----------
+    x: pandas dataframe, wind speed values 
+    y: list or array, ground turbulence integrals 
+    rho: float, desired correlation coefficient between x and y
+
     """
-    x_srtd = np.sort(x)
+    X.sort_values(by=['speed'], inplace=True)
     y_srtd = np.sort(y)
 
     # 15 is ad hoc; seems to work to ensure loops through x at least once
-    swap_window = (x_srtd[-1]-x_srtd[0]) / 15
-    N = len(x)
+    swap_window = (y_srtd[-1]-y_srtd[0]) / 15
+    N = len(y)
 
     # loop ten times over the dataset
     for i in range(10 * N):
         # index of the first pair in a swap
         i_first = i % N
         # find list of points within the swap_window of this first point
-        valid_indices = np.argwhere(abs(x_srtd - x_srtd[i_first]) < swap_window)
+        valid_indices = np.argwhere(abs(y_srtd - y_srtd[i_first]) < swap_window)
         # randomly chose one of these as the swap pair
         i_swap = np.random.choice(valid_indices)
         # swap entries
-        x_srtd[i_first], x_srtd[i_swap] = x_srtd[i_swap], x_srtd[i_first]
+        y_srtd[i_first], y_srtd[i_swap] = y_srtd[i_swap], y_srtd[i_first]
 
-        if np.corrcoeff(x_srtd, y_srtd)[0][1] < rho:
+        if np.corrcoeff(X['speed'], y_srtd)[0][1] < rho:
             break
 
-    if np.corrcoeff(x_srtd, y_srtd)[0][1] > rho:
+    if np.corrcoeff(X['speed'], y_srtd)[0][1] > rho:
         raise ValueError('did not reach desired correlation coefficient!')
+    else:
+        # add y to the dataframe X as a newcolumn
+        try: 
+            X.insert(loc=2, col='j_gl', values=y_srtd)
+        except ValueError:
+            print('turbulence column already exists. Check!')
 
-    return x_srtd, y_srtd, np.corrcoeff(x_srtd, y_srtd)[0][1]
+    # return dataframe which now contains the joint PDF 
+    return X
 
-def initialize_location(location):
+def initialize_location(loc):
     """Given location identifier, return ground altitude and dome height in km.
 
     Parameters
     ----------
-    location : str or dict
+    loc : str or dict
         Valid options for : 'cerro-paranal', 'cerro-pachon', 'cerro-telolo',
         'mauna-kea', and 'la-palma'.
         To customize to another observatory, input instead a dict with keys
-        'altitude' (value in km) and 'height' (optional: dome height in m.
-        If not given, will default to 10m)
+        'altitude' (value in km) and 'turbulence_params'
 
     """
     # custom usage
-    if type(location) == dict:
-        h0 = location['altitude']
-        try:
-            h_tel = location['height']
-        except KeyError:
-            h_tel = 10
+    if type(loc) == dict:
+        h0 = loc['altitude']
+        j_params = loc['turbulence_params']
+
+    elif type(loc) == str:
+        ground_altitude = {'cerro-pachon': 2.715, 
+                           'mauna-kea': 4.2,
+                           'cerro-telolo': 2.2, 
+                           'la-palma': 2.4,
+                           'cerro-paranal': 2.64}
+        j_params = {'cerro-pachon': {'gl': {'s': 0.62, 'scale': 2.34},
+                                           'fa': {'s': 0.84, 'scale': 1.51}}}
 
     else:
-        ground_altitude = {'cerro-pachon': 2.715, 'mauna-kea': 4.2,
-                           'cerro-telolo': 2.2, 'la-palma': 2.4,
-                           'cerro-paranal': 2.64}
-        h0 = ground_altitude[location]
-        h_tel = 10  # in m
+        return TypeError('loc arg must be either dict or string!')
+ 
+    # initialize lognorm pdfs for ground and FA turbulence:
+    j_pdf = {k: lognorm(v['s'], v['scale']) for k,v in j_params[loc].items()}
 
-    return h0, h_tel/1000
+    try:
+        return ground_altitude[loc], j_pdf
+    except KeyError:
+        print('loc must be one of allowed locations! See docstring.')
 
 
 def ground_cn2_model(params, h):

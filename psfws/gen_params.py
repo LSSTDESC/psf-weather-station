@@ -82,7 +82,8 @@ class ParameterGenerator():
     def __init__(self, location='cerro-pachon', seed=None,
                  date_range=['2019-05-01', '2019-10-31'],
                  gfs_file='data/gfs_-30.0_289.5_20190501-20191031.pkl',
-                 telemetry_file='data/tel_dict_CP_20190501-20191101.pkl'):
+                 telemetry_file='data/tel_dict_CP_20190501-20191101.pkl',
+                 rho_j_wind=None):
         """Initialize generator and process input data.
 
         Parameters
@@ -126,15 +127,25 @@ class ParameterGenerator():
         # set up random number generator with seed, if given
         self._rng = np.random.default_rng(seed)
 
-        # set ground height and telescope height (location specific)
-        self.h0, self.h_dome = utils.initialize_location(location)
-
+        # set ground + telescope height, turbulence pdf (location specific)
+        self.h0, self.j_pdf = utils.initialize_location(location)
+        # TO DO: put this rho in the location specific utils?
+        self.rho_jv = rho_j_wind
+        
         # load and match GFS/telemetry data
         self._match_data(date_range)
+        # if using correlation between wind speed and ground turbulence,
+        # draw values in advance and perform correlation of marginals
+        if self.rho_jv is not None:
+            # draw JGL values
+            j_gl = self.j_pdf['gl'].rvs(size=self.N)
+            # correlate and store modified dataframe
+            self.data_gl = utils.correlate_marginals(self.data_gl, 
+                                                     j_gl, self.rho_jv)
 
         # set index for lowest GFS data to use according to observatory height:
         # don't use anything lower than 1km above ground
-        self._gfs_stop = max([10, np.where(self.h_gfs > self.h0 + 1)[0][0]])
+        self._fa_stop = max([10, np.where(self.h_gfs > self.h0 + 1)[0][0]])
 
     def _load_data(self):
         """Load and return data from GFS and telemetry pickle files."""
@@ -222,39 +233,25 @@ class ParameterGenerator():
 
         return out
 
-    def _draw_ground_cn2(self):
-        """Return ground Cn2 model, with parameters randomly drawn.
+    def _draw_j(self, pt=None):
+        """Draw values for ground and free atmosphere turbulence."""
+        a = 10**(-13) # because PDFs are in units of 10^-13 m^1/3!
+        if self.rho_jv is None:
+            return (self.j_pdf['fa'].rvs(size=1, random_state=self._rng) * a, 
+                    self.j_pdf['gl'].rvs(size=1, random_state=self._rng) * a)
+        else:
+            # TO DO: add a check for pt being a date
+            # as written, assumes pt is a date, pick corresponding GL integral 
+            return (self.j_pdf['fa'].rvs(size=1, random_state=self._rng) * a,
+                    self.data_gl.loc['j_gl', pt] * a)
 
-        Model from "where is surface layer turbulence" (Tokovinin 2010), params
-        drawn from normal distribution around values from paper.
-        """
-        # model valid till 300m
-        h_gl = np.linspace(self.h_dome, 300, 100)
-
-        tokovinin_a = [-13.38, -13.15, -13.51]
-        tokovinin_p = [-1.16, -1.17, -0.97]
-
-        # adjust by sqrt(N-1) for sample variance
-        a = self._rng.normal(loc=np.mean(tokovinin_a),
-                             scale=np.std(tokovinin_a)/np.sqrt(2))
-        p = self._rng.normal(loc=np.mean(tokovinin_p),
-                             scale=np.std(tokovinin_p)/np.sqrt(2))
-
-        # also return h of GL model in km, adjusted to observatory height
-        return utils.ground_cn2_model({'A': a, 'p': p},
-                                      h_gl), self.h0 + h_gl/1000
-
-    def get_cn2(self, pt, model='osborn'):
-        """Get Cn2 and h arrays for datapoint with index pt.
-
-        Use Hufnagel model and GFS winds to calculate a Cn2 profile above 3km,
-        stacked with a ground layer model draw.
-        """
+    def get_fa_cn2(self, pt):
+        """Get Cn2 and h arrays for datapoint with index pt."""
         # pick out relevant wind data
         raw_p = self.get_raw_measurements(pt)
 
-        if model == 'osborn':
-            # not sure whether I want to have this set or as an input??
+        # only calculate Cn2 with this model starting 1km above ground
+        h_complete = np.linspace(self.h0 + 1, max(self.h_gfs), 500)
         inputs = self._interpolate(raw_p, h_complete)
         cn2_complete = utils.osborn(inputs)
             cn2_complete = utils.osborn(inputs)
@@ -280,23 +277,23 @@ class ParameterGenerator():
         """Get array of Cn2 values for all data available."""
         cn2_list = []
         for i in range(self.N):
-            cn2, h = self.get_cn2(i, model=model)
+            cn2, h = self.get_fa_cn2(i)
             cn2_list.append(cn2)
         return np.array(cn2_list), h
 
-    def _get_auto_layers(self):
+    def _get_auto_layers(self, pt):
         """Return layer altitudes according to max wind speed & turbulence."""
         # make an array of heights for interpolation
-        h_interp = np.linspace(self.h0 + self.h_dome, max(self.h_gfs), 500)
+        h_interp = np.linspace(self.h0, max(self.h_gfs), 500)
 
         # interpolate the median speeds from GFS to find height of max
-        all_speeds = [i for i in self.gfs['speed'].values]
+        all_speeds = [i for i in self.data_fa['speed'].values]
         h_maxspd = utils.find_max_median(all_speeds, self.h_gfs,
                                          h_interp, self.h0)
 
-        # interpolate the median cn2 to find height of max
-        all_cn2, h_cn2 = self.get_cn2_all()
-        h_maxcn2 = utils.find_max_median(all_cn2, h_cn2, h_interp, self.h0)
+        # interpolate the median cn2 to find height of max 
+        # don't change k here because don't care about absolute amplitude
+        cn2, h_cn2 = self.get_cn2_all()
 
         # sort the heights of max speed and max turbulence
         h3, h4 = np.sort([h_maxspd, h_maxcn2])
@@ -331,6 +328,7 @@ class ParameterGenerator():
 
         """
         maxh = max(self.h_gfs)
+        cn2, h = self.get_fa_cn2(pt)
 
         # define bins according to layers argument
         if layers == 'auto':
@@ -347,11 +345,15 @@ class ParameterGenerator():
 
     def get_turbulence_integral(self, pt, model='osborn', layers='auto'):
         """Return integrated Cn2 profile for datapoint with index pt."""
-        # get cn2 of pt
-        cn2, h = self.get_cn2(pt, model=model)
+        # draw turubulence integral values from PDFs:
+        j_fa, j_gl = self._draw_j(pt=pt)
+        
+        fa_ws, _, fa_layers = self._integrate_cn2(pt, layers=layers)
+        # total FA value scales the FA weights!
+        fa_ws = [w * j_fa / np.sum(fa_ws) for w in j_fa]
 
-        # return integrated cn2
-        return self._integrate_cn2(cn2, h, layers=layers)
+        # return integrated turbulence
+        return [j_gl] + fa_ws, fa_layers
 
     def get_param_interpolation(self, pt, h_out, extend=True):
         """Return winds for dataset with index pt interpolated to h_out."""
