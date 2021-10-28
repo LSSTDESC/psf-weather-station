@@ -133,7 +133,8 @@ class ParameterGenerator():
         self.rho_jv = rho_j_wind
         
         # load and match GFS/telemetry data
-        self._match_data(date_range)
+        self._load_data(date_range)
+
         # if using correlation between wind speed and ground turbulence,
         # draw values in advance and perform correlation of marginals
         if self.rho_jv is not None:
@@ -147,38 +148,34 @@ class ParameterGenerator():
         # don't use anything lower than 1km above ground
         self._fa_stop = max([10, np.where(self.h_gfs > self.h0 + 1)[0][0]])
 
-    def _load_data(self):
-        """Load and return data from GFS and telemetry pickle files."""
+    def _load_data(self, dr=['2019-05-01', '2019-10-31']):
+        """Load data from GFS and telemetry pickle files, match, and store."""
         gfs = pickle.load(open(self._file_paths['gfs_data'], 'rb'))
         gfs, self.h_gfs = utils.process_gfs(gfs)
-
-        raw_telemetry = pickle.load(open(self._file_paths['telemetry'], 'rb'))
-        telemetry = utils.process_telemetry(raw_telemetry)
-
-        return gfs, telemetry
-
-    def _match_data(self, dr=['2019-05-01', '2019-10-31']):
-        """Load data, temporally match telemetry to GFS, add as attribute."""
-        # load in data
-        gfs, telemetry = self._load_data()
 
         # first, find GFS dates within the date range desired
         gfs_dates = gfs[dr[0]:dr[1]].index
 
-        # this function returns median of measured speed/dir telemetry within
-        # 30 mins of each GFS datapoint, when possible, and datetimes of these
-        spd_m, dir_m, t_m, dates_m = utils.match_telemetry(telemetry,
-                                                           gfs_dates)
+        # TO DO: wrap following in if statement if using telemetry 
+        
+        raw_telemetry = pickle.load(open(self._file_paths['telemetry'], 'rb'))
+        telemetry = utils.process_telemetry(raw_telemetry)
 
-        # calculate velocity componenents from the matched speed/directions
-        uv_m = utils.to_components(spd_m, dir_m)
+        # this function returns dict of telemetry medians within
+        # 30 mins of each GFS datapoint and datetimes of these
+        tel_m, dates_m = utils.match_telemetry(telemetry, gfs_dates)
 
         # store results
-        self.telemetry = {'speed': spd_m, 'dir': dir_m, 'temp': t_m,
-                          'u': uv_m['u'], 'v': uv_m['v']}
-        self.gfs = gfs.loc[dates_m]
+        # TO DO: or if using gfs, select just the ground layer
+        self.data_gl = pd.DataFrame(data=tel_m, index=dates_m)
+        
+        gfs = gfs.loc[dates_m]
+        self.N = len(gfs)
 
-        self.N = len(self.gfs)
+        # FA data a bit more tricky... just want to keep >1km from ground?
+        for k in ['u', 'v', 't', 'p', 'speed', 'dir']:
+            gfs[k] = [gfs[k].values[i][self._fa_stop:] for i in range(self.N)]
+        self.data_fa = gfs
 
     def get_raw_measurements(self, pt):
         """Get a matched set of measurements from datapoint with index pt.
@@ -186,7 +183,7 @@ class ParameterGenerator():
         Parameters
         ----------
         pt : int
-            index of output datapoint desired
+            date of output datapoint desired
 
         Returns
         -------
@@ -199,18 +196,18 @@ class ParameterGenerator():
         respectively, and the wind direction is given as degrees west of north.
 
         """
-        speed = np.hstack([self.telemetry['speed'][pt],
-                           self.gfs.iloc[pt]['speed'][self._gfs_stop:]])
-        direction = np.hstack([self.telemetry['dir'][pt],
-                               self.gfs.iloc[pt]['dir'][self._gfs_stop:]])
-        temperature = np.hstack([self.telemetry['temp'][pt],
-                                 self.gfs.iloc[pt]['t'][self._gfs_stop:]])
+        gl = self.data_gl.loc[pt]
+        fa = self.data_fa.loc[pt]
 
-        u = np.hstack([self.telemetry['u'][pt],
-                      self.gfs.iloc[pt]['u'][self._gfs_stop:]])
-
-        v = np.hstack([self.telemetry['v'][pt],
-                      self.gfs.iloc[pt]['v'][self._gfs_stop:]])
+        direction = np.hstack([gl.loc['dir'], fa.loc['dir']])
+        
+        return {'u': np.hstack([gl.loc['u'], fa.loc['u']]), 
+                'v': np.hstack([gl.loc['v'], fa.loc['v']]), 
+                'speed': np.hstack([gl.loc['speed'], fa.loc['speed']]), 
+                't': np.hstack([gl.loc['t'], fa.loc['t']]), 
+                'h': np.hstack([self.h0, self.h_gfs]),
+                'direction': utils.smooth_direction(direction), 
+                'p': fa.loc['p']}
 
     def _interpolate(self, p_dict, h_out, extend=True):
         """Get interpolations & derivatives of params at new heights h_out."""
@@ -254,26 +251,10 @@ class ParameterGenerator():
         h_complete = np.linspace(self.h0 + 1, max(self.h_gfs), 500)
         inputs = self._interpolate(raw_p, h_complete)
         cn2_complete = utils.osborn(inputs)
-            cn2_complete = utils.osborn(inputs)
 
-        else:
-            # make a vector of heights where hufnagel will be valid
-            h_huf = np.linspace(self.h0 + 3, max(self.h_gfs), 100)
-            # interpolate wind data to those heights
-            speed_huf = self._interpolate(raw_winds, h_huf)['speed'].flatten()
-            # calculate hufnagel cn2 for those
-            cn2_huf = utils.hufnagel(h_huf, speed_huf)
-
-            # draw model of ground turbulence
-            cn2_gl, h_gl = self._draw_ground_cn2()
-
-            cn2_complete = np.hstack([cn2_gl, cn2_huf])
-            h_complete = np.hstack([h_gl, h_huf])
-
-        # return stacked hufnagel and ground layer profiles/altitudes
         return cn2_complete, h_complete
 
-    def get_cn2_all(self, model='osborn'):
+    def get_cn2_all(self):
         """Get array of Cn2 values for all data available."""
         cn2_list = []
         for i in range(self.N):
@@ -294,6 +275,7 @@ class ParameterGenerator():
         # interpolate the median cn2 to find height of max 
         # don't change k here because don't care about absolute amplitude
         cn2, h_cn2 = self.get_cn2_all()
+        h_maxcn2 = utils.find_max_median(cn2, h_cn2, h_interp, self.h0)
 
         # sort the heights of max speed and max turbulence
         h3, h4 = np.sort([h_maxspd, h_maxcn2])
@@ -306,7 +288,7 @@ class ParameterGenerator():
 
         return [lowest, h2, h3, h4, h5, 18]
 
-    def _integrate_cn2(self, cn2, h, layers='auto'):
+    def _integrate_cn2(self, pt, layers='auto'):
         """Calculate turbulence integral of given Cn2 at given layers.
 
         Parameters
@@ -332,7 +314,7 @@ class ParameterGenerator():
 
         # define bins according to layers argument
         if layers == 'auto':
-            bin_centers = self._get_auto_layers()
+            bin_centers = self._get_auto_layers(pt)
         else:
             bin_centers = layers
         edges = [self.h0] + [np.mean(bin_centers[i:i+2])
@@ -343,7 +325,7 @@ class ParameterGenerator():
         # return along with edges and bin centers
         return j, np.array(edges), np.array(bin_centers)
 
-    def get_turbulence_integral(self, pt, model='osborn', layers='auto'):
+    def get_turbulence_integral(self, pt, layers='auto'):
         """Return integrated Cn2 profile for datapoint with index pt."""
         # draw turubulence integral values from PDFs:
         j_fa, j_gl = self._draw_j(pt=pt)
@@ -360,7 +342,7 @@ class ParameterGenerator():
         p_dict = self.get_raw_measurements(pt)
         return self._interpolate(p_dict, h_out, extend)
 
-    def draw_parameters(self, cn2model='osborn', layers='auto'):
+    def draw_parameters(self, layers='auto'):
         """Draw a random, full set of parameters.
 
         Parameters: layers sets output altitudes; either array of values, or
@@ -373,11 +355,10 @@ class ParameterGenerator():
         respectively, and the wind direction is given as degrees west of north.
         The turbulence integrals have dimension m^[1/3].
         """
-        pt = self._rng.integers(low=0, high=len(self.gfs))
+        pt = self._rng.choice(self.data_fa.index)
 
-        j, _, layers = self.get_turbulence_integral(pt, model=cn2model,
+        j, layers = self.get_turbulence_integral(pt, layers='auto')
         params = self.get_param_interpolation(pt, layers)
-        params = self.get_wind_interpolation(pt, layers)
 
         params['j'] = j
 

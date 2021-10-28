@@ -139,7 +139,7 @@ def process_telemetry(telemetry):
     # return, converting temperatures to Kelvin from degrees Celsius
     return {'dir': tel_dir.loc[dir_mask],
             'speed': tel_speed.loc[speed_mask],
-            'temp': tel_temp.loc[temp_mask] + 273.15}
+            't': tel_temp.loc[temp_mask] + 273.15}
 
 
 def to_direction(x, y):
@@ -231,8 +231,12 @@ def match_telemetry(telemetry, gfs_dates):
     matched_t = [np.median(temp.loc[temp_ids[i]])
                  for i in range(n_gfs) if i in ids_to_keep]
 
-    return (np.array(matched_s), np.array(matched_d),
-            np.array(matched_t), gfs_dates[ids_to_keep])
+    # calculate velocity componenents from the matched speed/directions
+    uv = to_components(np.array(matched_s), np.array(matched_d))
+
+    return ({'speed': np.array(matched_s), 'dir': np.array(matched_d),
+                'temp': np.array(matched_t), 'u': uv['u'], 'v': uv['v']},
+            gfs_dates[ids_to_keep])
 
 
 def interpolate(x, y, new_x, ddz=True, extend=True):
@@ -280,7 +284,7 @@ def interpolate(x, y, new_x, ddz=True, extend=True):
             return f_y(new_x)
 
 
-def osborn(inputs, k=1):
+def osborn(inputs):
     """Calculate Cn2 model from Osborn et al 2018."""
     g = 9.8
 
@@ -294,7 +298,7 @@ def osborn(inputs, k=1):
     numerator = 80e-6 * inputs['p'] * dthetaz
     denominator = inputs['t'] * thetaz
 
-    return k * lz**(4/3) * (numerator / denominator)**2
+    return lz**(4/3) * (numerator / denominator)**2
 
 
 def osborn_theta(inputs):
