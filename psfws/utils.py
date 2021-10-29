@@ -18,14 +18,19 @@ def lognorm(sigma, scale):
 
 def correlate_marginals(X, y, rho, rng):
     """
-    Takes two marginal distrubtions, x and y, and returns a joint PDF with
-    specified correlation coefficient rho. Also returns resulting correlation.
+    Returns a joint PDF with specified correlation given two marginal PDFs.
 
     Parameters
     ----------
-    x: pandas dataframe, wind speed values 
-    y: list or array, ground turbulence integrals 
-    rho: float, desired correlation coefficient between x and y
+    X: pandas dataframe, with wind speed samples in column 'speed'
+    y: list or array, samples from second marginal
+    rho: float, desired correlation coefficient between X and y
+    rng: numpy random state object.
+
+    Returns
+    -------
+    X: pandas dataframe, same as input X, with added column of y values sorted
+       such that the joint PDF has correlation rho.
 
     """
     X.sort_values(by=['speed'], inplace=True)
@@ -63,16 +68,23 @@ def correlate_marginals(X, y, rho, rng):
 
 
 def initialize_location(loc):
-    """Given location identifier, return ground altitude and dome height in km.
+    """Fetch ground altitude and turbulence PDF parameters for specified
+    location of an observatory.
 
     Parameters
     ----------
     loc : str or dict
-        Valid options for : 'cerro-paranal', 'cerro-pachon', 'cerro-telolo',
+        Valid str options: 'cerro-paranal', 'cerro-pachon', 'cerro-telolo',
         'mauna-kea', and 'la-palma'.
         To customize to another observatory, input instead a dict with keys
-        'altitude' (value in km) and 'turbulence_params'
+        'altitude' (value in km) and 'turbulence_params' (see j dict below)
 
+    Returns
+    -------
+    h: float, local ground altitude
+    j: dict
+        PDF parameters for ground layer ('gl') and free atmosphere ('fa'). 
+        Parameters s (sigma) and scale (exp(mu)) for log normal distributions. 
     """
     # custom usage
     if type(loc) == dict:
@@ -121,7 +133,7 @@ def process_telemetry(telemetry):
     Input and output are both dicts of pandas series of wind speeds/directions/
     temperatures.
     Values in output masked for zeros and speeds > 40m/s. Keys in output are
-    'speed', 'dir', and 'temp'
+    'speed', 'dir', and 't'
     """
     tel_dir = telemetry['wind_direction']
     tel_speed = telemetry['wind_speed']
@@ -180,8 +192,6 @@ def process_gfs(gfs_df):
     # find altitudes of GFS outputs; all data have same pressures, so take first
     median_t = np.median([gfs_df['t'].values[i] for i in range(n)], axis=0)
     h_gfs = pressure_to_h(gfs_df['p'].values[0], median_t)
-    # gfs_df['h'] = [pressure_to_h(gfs_df['p'].values[0], 
-    #                              gfs_df['t'].values[i]) for i in range(n)]
     return gfs_df, h_gfs
 
 
@@ -196,9 +206,23 @@ def pressure_to_h(p, t):
 
 
 def match_telemetry(telemetry, gfs_dates):
-    """Return speed, dir, and overlap datetimes between telemetry and GFS.
+    """Return overlap between telemetry and forecasting data.
 
-    Telemetry vals returned are medians in 1h bins around each GFS output.
+    Parameters
+    ----------
+    telemetry: pandas dict 
+        Columns: 'speed', 'dir', 't', and index of datetimes of observations.
+
+    gfs_dates: pd Series containing datetime objects of forecasts
+
+    Returns
+    -------
+    matched telemetry: dict
+        Parameters returned are medians in 1h bins around each forecast. Dict 
+        has keys 'speed', 'dir', 't', 'u', 'v'.
+    dates: pd Series
+        subselection of input dates which had a valid overlap.
+    
     """
     n_gfs = len(gfs_dates)
 
