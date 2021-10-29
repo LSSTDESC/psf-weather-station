@@ -81,7 +81,7 @@ class ParameterGenerator():
 
     def __init__(self, location='cerro-pachon', seed=None,
                  date_range=['2019-05-01', '2019-10-31'],
-                 gfs_file='data/gfs_-30.0_289.5_20190501-20191031.pkl',
+                 gfs_file='data/gfs_-30.0_289.5_20190501-20191101.pkl',
                  telemetry_file='data/tel_dict_CP_20190501-20191101.pkl',
                  rho_j_wind=None):
         """Initialize generator and process input data.
@@ -139,19 +139,22 @@ class ParameterGenerator():
         # draw values in advance and perform correlation of marginals
         if self.rho_jv is not None:
             # draw JGL values
-            j_gl = self.j_pdf['gl'].rvs(size=self.N)
+            j_gl = self.j_pdf['gl'].rvs(size=self.N, random_state=self._rng)
             # correlate and store modified dataframe
             self.data_gl = utils.correlate_marginals(self.data_gl, 
-                                                     j_gl, self.rho_jv)
-
-        # set index for lowest GFS data to use according to observatory height:
-        # don't use anything lower than 1km above ground
-        self._fa_stop = max([10, np.where(self.h_gfs > self.h0 + 1)[0][0]])
+                                                     j_gl, 
+                                                     self.rho_jv,
+                                                     self._rng)
 
     def _load_data(self, dr=['2019-05-01', '2019-10-31']):
         """Load data from GFS and telemetry pickle files, match, and store."""
         gfs = pickle.load(open(self._file_paths['gfs_data'], 'rb'))
-        gfs, self.h_gfs = utils.process_gfs(gfs)
+        gfs, h_gfs = utils.process_gfs(gfs)
+
+        # set index for lowest GFS data to use according to observatory height:
+        # don't use anything lower than 1km above ground
+        self._fa_stop = max([10, np.where(h_gfs > self.h0 + 1)[0][0]])
+        self.h_gfs = h_gfs[self._fa_stop:]
 
         # first, find GFS dates within the date range desired
         gfs_dates = gfs[dr[0]:dr[1]].index
@@ -199,15 +202,15 @@ class ParameterGenerator():
         gl = self.data_gl.loc[pt]
         fa = self.data_fa.loc[pt]
 
-        direction = np.hstack([gl.loc['dir'], fa.loc['dir']])
+        direction = np.hstack([gl.at['dir'], fa.at['dir']])
         
-        return {'u': np.hstack([gl.loc['u'], fa.loc['u']]), 
-                'v': np.hstack([gl.loc['v'], fa.loc['v']]), 
-                'speed': np.hstack([gl.loc['speed'], fa.loc['speed']]), 
-                't': np.hstack([gl.loc['t'], fa.loc['t']]), 
+        return {'u': np.hstack([gl.at['u'], fa.at['u']]), 
+                'v': np.hstack([gl.at['v'], fa.at['v']]), 
+                'speed': np.hstack([gl.at['speed'], fa.at['speed']]), 
+                't': np.hstack([gl.at['t'], fa.at['t']]), 
                 'h': np.hstack([self.h0, self.h_gfs]),
                 'direction': utils.smooth_direction(direction), 
-                'p': fa.loc['p']}
+                'p': fa.at['p']}
 
     def _interpolate(self, p_dict, h_out, extend=True):
         """Get interpolations & derivatives of params at new heights h_out."""
@@ -234,13 +237,13 @@ class ParameterGenerator():
         """Draw values for ground and free atmosphere turbulence."""
         a = 10**(-13) # because PDFs are in units of 10^-13 m^1/3!
         if self.rho_jv is None:
-            return (self.j_pdf['fa'].rvs(size=1, random_state=self._rng) * a, 
-                    self.j_pdf['gl'].rvs(size=1, random_state=self._rng) * a)
+            return (self.j_pdf['fa'].rvs(random_state=self._rng) * a, 
+                    self.j_pdf['gl'].rvs(random_state=self._rng) * a)
         else:
             # TO DO: add a check for pt being a date
             # as written, assumes pt is a date, pick corresponding GL integral 
-            return (self.j_pdf['fa'].rvs(size=1, random_state=self._rng) * a,
-                    self.data_gl.loc['j_gl', pt] * a)
+            return (self.j_pdf['fa'].rvs(random_state=self._rng) * a,
+                    self.data_gl.at[pt, 'j_gl'] * a)
 
     def get_fa_cn2(self, pt):
         """Get Cn2 and h arrays for datapoint with index pt."""
@@ -257,8 +260,8 @@ class ParameterGenerator():
     def get_cn2_all(self):
         """Get array of Cn2 values for all data available."""
         cn2_list = []
-        for i in range(self.N):
-            cn2, h = self.get_fa_cn2(i)
+        for pt in self.data_fa.index:
+            cn2, h = self.get_fa_cn2(pt)
             cn2_list.append(cn2)
         return np.array(cn2_list), h
 
@@ -332,10 +335,10 @@ class ParameterGenerator():
         
         fa_ws, _, fa_layers = self._integrate_cn2(pt, layers=layers)
         # total FA value scales the FA weights!
-        fa_ws = [w * j_fa / np.sum(fa_ws) for w in j_fa]
+        fa_ws = [w * j_fa / np.sum(fa_ws) for w in fa_ws]
 
         # return integrated turbulence
-        return [j_gl] + fa_ws, fa_layers
+        return [j_gl] + fa_ws, [self.h0] + fa_layers
 
     def get_param_interpolation(self, pt, h_out, extend=True):
         """Return winds for dataset with index pt interpolated to h_out."""

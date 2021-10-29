@@ -15,7 +15,8 @@ def lognorm(sigma, scale):
     that Y=exp(X), and sigma is the standard deviation of X."""
     return scipy.stats.lognorm(s=sigma, scale=scale)
 
-def correlate_marginals(X, y, rho):
+
+def correlate_marginals(X, y, rho, rng):
     """
     Takes two marginal distrubtions, x and y, and returns a joint PDF with
     specified correlation coefficient rho. Also returns resulting correlation.
@@ -35,30 +36,31 @@ def correlate_marginals(X, y, rho):
     N = len(y)
 
     # loop ten times over the dataset
-    for i in range(10 * N):
+    for i in range(100 * N):
         # index of the first pair in a swap
         i_first = i % N
         # find list of points within the swap_window of this first point
         valid_indices = np.argwhere(abs(y_srtd - y_srtd[i_first]) < swap_window)
         # randomly chose one of these as the swap pair
-        i_swap = np.random.choice(valid_indices)
+        i_swap = rng.choice(valid_indices.flatten())
         # swap entries
         y_srtd[i_first], y_srtd[i_swap] = y_srtd[i_swap], y_srtd[i_first]
 
-        if np.corrcoeff(X['speed'], y_srtd)[0][1] < rho:
+        if np.corrcoef(X['speed'], y_srtd)[0][1] < rho:
             break
 
-    if np.corrcoeff(X['speed'], y_srtd)[0][1] > rho:
+    if np.corrcoef(X['speed'], y_srtd)[0][1] > rho:
         raise ValueError('did not reach desired correlation coefficient!')
     else:
         # add y to the dataframe X as a newcolumn
         try: 
-            X.insert(loc=2, col='j_gl', values=y_srtd)
+            X.insert(loc=2, column='j_gl', value=y_srtd)
         except ValueError:
             print('turbulence column already exists. Check!')
 
     # return dataframe which now contains the joint PDF 
     return X
+
 
 def initialize_location(loc):
     """Given location identifier, return ground altitude and dome height in km.
@@ -96,12 +98,6 @@ def initialize_location(loc):
         return ground_altitude[loc], j_pdf
     except KeyError:
         print('loc must be one of allowed locations! See docstring.')
-
-
-def ground_cn2_model(params, h):
-    """Return power law model for Cn2 as function of elevation."""
-    logcn2 = params['A'] + params['p'] * np.log10(h)
-    return 10**(logcn2)
 
 
 def find_max_median(x, h_old, h_new, h0):
@@ -208,7 +204,7 @@ def match_telemetry(telemetry, gfs_dates):
 
     speed = telemetry['speed']
     direction = telemetry['dir']
-    temp = telemetry['temp']
+    temp = telemetry['t']
 
     speed_ids = [speed.index[abs(gfs_dates[i] - speed.index)
                              < pd.Timedelta('30min')] for i in range(n_gfs)]
@@ -235,7 +231,7 @@ def match_telemetry(telemetry, gfs_dates):
     uv = to_components(np.array(matched_s), np.array(matched_d))
 
     return ({'speed': np.array(matched_s), 'dir': np.array(matched_d),
-                'temp': np.array(matched_t), 'u': uv['u'], 'v': uv['v']},
+                't': np.array(matched_t), 'u': uv['u'], 'v': uv['v']},
             gfs_dates[ids_to_keep])
 
 
@@ -313,16 +309,6 @@ def osborn_theta(inputs):
     dthetaz = amp * (inputs['dtdz'] - Rcp * inputs['t'] * p_ratio)
 
     return theta, dthetaz
-
-
-def hufnagel(z, v):
-    """Calculte Hufnagel Cn2, input z in km, v in m/s."""
-    if np.min(z) < 3:
-        raise ValueError('hufnagel model only valid for height>3km')
-    z = np.copy(z) * 1000  # to km
-    tmp1 = 2.2e-53 * z**10 * (v / 27)**2 * np.exp(-z * 1e-3)
-    tmp2 = 1e-16 * np.exp(-z * 1.5e-3)
-    return tmp1 + tmp2
 
 
 def integrate_in_bins(cn2, h, edges):
