@@ -21,23 +21,28 @@ class ParameterGenerator():
 
     Attributes
     ----------
-    gfs : pandas dataframe
-        GFS wind values (matched w telemetry), with DateTime as index and
-        columns 'u', 'v', 'speed', 'dir'. Each entry in the DataFrame is a
-        ndarray of values for each altitude, with speed/velocity components
-        in m/s and directions in degrees. The u/v components of velocity
-        correspond to north/south winds, respectively, and the wind direction
-        is given as degrees west of north.
-    telemetry : dict of ndarrays
-        Keys: 'speed','dir', 'u', 'v'. Telemetry data, temporally matched to
-        GFS wind data: values in gfs['u'].iloc[i] are in the same time
-        bin as telemetry['u'][i].
-    h_gfs : ndarray
-        Altitudes of GFS datapoints, in km.
+    data_fa : pandas dataframe
+        Free atmosphere (>1km above ground) forecasting data, with DateTimes as 
+        index and columns 'u', 'v', 'speed', 'dir', 't', and 'p'. Each entry is 
+        a ndarray of values for each altitude, with speed/velocity components
+        in m/s, directions in degrees, temperatures in Kelvin, and pressures in 
+        mbar. The u/v components of velocity correspond to north/south winds,
+        respectively, and the wind direction is given as degrees west of north.
+    data_gl : pandas dataframe
+        Ground layer data, with DateTimes as index and columns 'speed','dir',
+        'u', 'v', 't', and optionally 'j_gl' (see rho_jv below). These values
+        are temporally matched to data_fa, so have identical indicies.
+    h_fa : ndarray
+        Altitudes of free atmopshere forecasting data, in km.
     h0 : float
         Altitude of observatory, in km.
-    h_dome : float
-        Height of telescope dome, in meters.
+    j_pdf : dict
+        Dictionary containing parameters for lognormal PDFs of turbulence 
+        integrals for both the ground layer and the free atmosphere values. Keys
+        are 'gl' and 'fa' respecitvely.
+    rho_jv : float or None (default)
+        Correlation coefficient between the ground layer wind speed and ground
+        turbulence integral. If None, no correlation is included.
     N : int
         Number of matched datasets.
 
@@ -52,21 +57,21 @@ class ParameterGenerator():
         to new altitudes h_out. Interpolation type can be specified with the
         'kind' keyword (str, either 'cubic' or 'gp' for Gaussian Process).
 
-    get_cn2(pt)
-        Get a set of Cn2 values associated with datapoint with index pt.
+    get_fa_cn2(pt)
+        Get free atmosphere Cn2 profile for requested datapoint. 
 
     get_turbulence_integral(pt, layers='auto')
-        Get set of turbulence integrals associated with datapoint with index pt
+        Get set of turbulence integrals associated for requested datapoint pt.
         Centers of integration regions set by layers keyword; either array of
         values, or 'auto' for them to be automatically calculated based on wind
         and turbulence maximums.
 
     get_cn2_all()
-        Get Cn2 values for entire dataset, returned as array.
+        Get free atmosphere Cn2 profiles for entire dataset, returned as array.
 
     draw_parameters(layers='auto')
         Randomly draw a set of parameters: wind speed, wind direction,
-        turbulence integral. These are returned in a dict along with layer
+        turbulence integrals. These are returned in a dict along with layer
         heights.
         Output altitudes are set by layers keyword; either array of values, or
         'auto' for them to be automatically calculated based on wind and
@@ -93,8 +98,9 @@ class ParameterGenerator():
             Valid options: 'cerro-paranal', 'cerro-pachon', 'cerro-telolo',
             'mauna-kea', and 'la-palma'.
             To customize to another observatory, input instead a dict with keys
-            'altitude' (value in km) and 'height' (optional: dome height in m.
-            If not given, will default to 10m)
+            'altitude' (value in km) and 'turbulence_params', itself a nested
+            dict of lognormal PDF parameters 's' (sigma) and 'scale' (exp(mu))
+            for ground layer and free atmosphere, e.g. {'gl':{'s':, 'scale':}}.
 
         seed : int
             Seed to initialize random number generator (default is None)
@@ -111,6 +117,13 @@ class ParameterGenerator():
             List of two strings representing dates, e.g. '2019-05-01'.
             Data date range to use. Allows user to select subset of telemetry
             (default: ['2019-05-01', '2019-10-31'])
+
+        rho_j_wind : float (default is None)
+            Desired correlation coefficient between ground wind speed and 
+            turbulence integral. If None, no correlation is included. If a
+            float value is specified, the joint PDF of wind values and ground
+            turbulence is generated and the turbulence values are stored in 
+            data_gl as the 'j_gl' column.
 
         """
         # set up the paths to data files, and check they exist.
@@ -149,12 +162,12 @@ class ParameterGenerator():
     def _load_data(self, dr=['2019-05-01', '2019-10-31']):
         """Load data from GFS and telemetry pickle files, match, and store."""
         gfs = pickle.load(open(self._file_paths['gfs_data'], 'rb'))
-        gfs, h_gfs = utils.process_gfs(gfs)
+        gfs, h_fa = utils.process_gfs(gfs)
 
         # set index for lowest GFS data to use according to observatory height:
         # don't use anything lower than 1km above ground
-        self._fa_stop = max([10, np.where(h_gfs > self.h0 + 1)[0][0]])
-        self.h_gfs = h_gfs[self._fa_stop:]
+        self._fa_stop = max([10, np.where(h_fa > self.h0 + 1)[0][0]])
+        self.h_fa = h_fa[self._fa_stop:]
 
         # first, find GFS dates within the date range desired
         gfs_dates = gfs[dr[0]:dr[1]].index
@@ -208,7 +221,7 @@ class ParameterGenerator():
                 'v': np.hstack([gl.at['v'], fa.at['v']]), 
                 'speed': np.hstack([gl.at['speed'], fa.at['speed']]), 
                 't': np.hstack([gl.at['t'], fa.at['t']]), 
-                'h': np.hstack([self.h0, self.h_gfs]),
+                'h': np.hstack([self.h0, self.h_fa]),
                 'direction': utils.smooth_direction(direction), 
                 'p': fa.at['p']}
 
@@ -223,7 +236,7 @@ class ParameterGenerator():
                                                        extend=extend)
 
         # special case:
-        out['p'], out['dpdz'] = utils.interpolate(self.h_gfs * 1000,
+        out['p'], out['dpdz'] = utils.interpolate(self.h_fa * 1000,
                                                   p_dict['p'], 
                                                   h_out * 1000)
         out['direction'] = utils.smooth_direction(utils.to_direction(out['v'],
@@ -246,19 +259,23 @@ class ParameterGenerator():
                     self.data_gl.at[pt, 'j_gl'] * a)
 
     def get_fa_cn2(self, pt):
-        """Get Cn2 and h arrays for datapoint with index pt."""
+        """Get free atmosphere Cn2 and h arrays for datapoint with index pt, 
+        using empirical model from Osborn et al 2018: 
+        https://doi.org/10.1093/mnras/sty1898.
+
+        """
         # pick out relevant wind data
         raw_p = self.get_raw_measurements(pt)
 
         # only calculate Cn2 with this model starting 1km above ground
-        h_complete = np.linspace(self.h0 + 1, max(self.h_gfs), 500)
+        h_complete = np.linspace(self.h0 + 1, max(self.h_fa), 500)
         inputs = self._interpolate(raw_p, h_complete)
         cn2_complete = utils.osborn(inputs)
 
         return cn2_complete, h_complete
 
     def get_cn2_all(self):
-        """Get array of Cn2 values for all data available."""
+        """Get array of free atmosphere Cn2 values for all data available."""
         cn2_list = []
         for pt in self.data_fa.index:
             cn2, h = self.get_fa_cn2(pt)
@@ -268,11 +285,11 @@ class ParameterGenerator():
     def _get_auto_layers(self, pt):
         """Return layer altitudes according to max wind speed & turbulence."""
         # make an array of heights for interpolation
-        h_interp = np.linspace(self.h0, max(self.h_gfs), 500)
+        h_interp = np.linspace(self.h0, max(self.h_fa), 500)
 
         # interpolate the median speeds from GFS to find height of max
         all_speeds = [i for i in self.data_fa['speed'].values]
-        h_maxspd = utils.find_max_median(all_speeds, self.h_gfs,
+        h_maxspd = utils.find_max_median(all_speeds, self.h_fa,
                                          h_interp, self.h0)
 
         # interpolate the median cn2 to find height of max 
@@ -312,7 +329,7 @@ class ParameterGenerator():
         integration bin centers (aka layers if not 'auto'), in km
 
         """
-        maxh = max(self.h_gfs)
+        maxh = max(self.h_fa)
         cn2, h = self.get_fa_cn2(pt)
 
         # define bins according to layers argument
@@ -330,11 +347,11 @@ class ParameterGenerator():
 
     def get_turbulence_integral(self, pt, layers='auto'):
         """Return integrated Cn2 profile for datapoint with index pt."""
-        # draw turubulence integral values from PDFs:
+        # draw turbulence integral values from PDFs:
         j_fa, j_gl = self._draw_j(pt=pt)
         
         fa_ws, _, fa_layers = self._integrate_cn2(pt, layers=layers)
-        # total FA value scales the FA weights!
+        # total FA value scales the FA weights from integrated Osborn model
         fa_ws = [w * j_fa / np.sum(fa_ws) for w in fa_ws]
 
         # return integrated turbulence
