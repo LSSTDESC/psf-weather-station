@@ -12,13 +12,14 @@ def lognorm(sigma, scale):
     """Return a scipy stats lognorm defined by parameters sigma and scale.
 
     Scale = exp(mu) for mu the mean of the normally distributed variable X such
-    that Y=exp(X), and sigma is the standard deviation of X."""
+    that Y=exp(X), and sigma is the standard deviation of X.
+    """
     return scipy.stats.lognorm(s=sigma, scale=scale)
 
 
 def correlate_marginals(X, y, rho, rng):
     """
-    Returns a joint PDF with specified correlation given two marginal PDFs.
+    Return a joint PDF with specified correlation given two marginal PDFs.
 
     Parameters
     ----------
@@ -58,18 +59,18 @@ def correlate_marginals(X, y, rho, rng):
         raise ValueError('did not reach desired correlation coefficient!')
     else:
         # add y to the dataframe X as a newcolumn
-        try: 
+        try:
             X.insert(loc=2, column='j_gl', value=y_srtd)
         except ValueError:
             print('turbulence column already exists. Check!')
 
-    # return dataframe which now contains the joint PDF 
+    # return dataframe which now contains the joint PDF
     return X
 
 
 def initialize_location(loc):
-    """Fetch ground altitude and turbulence PDF parameters for specified
-    location of an observatory.
+    """
+    Fetch ground altitude and turbulence PDF parameters for observatory.
 
     Parameters
     ----------
@@ -83,8 +84,8 @@ def initialize_location(loc):
     -------
     h: float, local ground altitude
     j: dict
-        PDF parameters for ground layer ('gl') and free atmosphere ('fa'). 
-        Parameters s (sigma) and scale (exp(mu)) for log normal distributions. 
+        PDF parameters for ground layer ('gl') and free atmosphere ('fa').
+        Parameters s (sigma) and scale (exp(mu)) for log normal distributions.
     """
     # custom usage
     if type(loc) == dict:
@@ -92,19 +93,19 @@ def initialize_location(loc):
         j_params = loc['turbulence_params']
 
     elif type(loc) == str:
-        ground_altitude = {'cerro-pachon': 2.715, 
+        ground_altitude = {'cerro-pachon': 2.715,
                            'mauna-kea': 4.2,
-                           'cerro-telolo': 2.2, 
+                           'cerro-telolo': 2.2,
                            'la-palma': 2.4,
                            'cerro-paranal': 2.64}
         j_params = {'cerro-pachon': {'gl': {'s': 0.62, 'scale': 2.34},
-                                           'fa': {'s': 0.84, 'scale': 1.51}}}
+                                     'fa': {'s': 0.84, 'scale': 1.51}}}
 
     else:
         return TypeError('loc arg must be either dict or string!')
- 
+
     # initialize lognorm pdfs for ground and FA turbulence:
-    j_pdf = {k: lognorm(v['s'], v['scale']) for k,v in j_params[loc].items()}
+    j_pdf = {k: lognorm(v['s'], v['scale']) for k, v in j_params[loc].items()}
 
     try:
         return ground_altitude[loc], j_pdf
@@ -189,7 +190,7 @@ def process_gfs(gfs_df):
     gfs_df['dir'] = [to_direction(gfs_df['v'].values[i], gfs_df['u'].values[i])
                      for i in range(n)]
 
-    # find altitudes of GFS outputs; all data have same pressures, so take first
+    # find altitudes of forecasts; all data have same pressures so take first
     median_t = np.median([gfs_df['t'].values[i] for i in range(n)], axis=0)
     h_gfs = pressure_to_h(gfs_df['p'].values[0], median_t)
     return gfs_df, h_gfs
@@ -210,7 +211,7 @@ def match_telemetry(telemetry, gfs_dates):
 
     Parameters
     ----------
-    telemetry: pandas dict 
+    telemetry: pandas dict
         Columns: 'speed', 'dir', 't', and index of datetimes of observations.
 
     gfs_dates: pd Series containing datetime objects of forecasts
@@ -218,11 +219,11 @@ def match_telemetry(telemetry, gfs_dates):
     Returns
     -------
     matched telemetry: dict
-        Parameters returned are medians in 1h bins around each forecast. Dict 
+        Parameters returned are medians in 1h bins around each forecast. Dict
         has keys 'speed', 'dir', 't', 'u', 'v'.
     dates: pd Series
         subselection of input dates which had a valid overlap.
-    
+
     """
     n_gfs = len(gfs_dates)
 
@@ -255,7 +256,7 @@ def match_telemetry(telemetry, gfs_dates):
     uv = to_components(np.array(matched_s), np.array(matched_d))
 
     return ({'speed': np.array(matched_s), 'dir': np.array(matched_d),
-                't': np.array(matched_t), 'u': uv['u'], 'v': uv['v']},
+             't': np.array(matched_t), 'u': uv['u'], 'v': uv['v']},
             gfs_dates[ids_to_keep])
 
 
@@ -289,9 +290,9 @@ def interpolate(x, y, new_x, ddz=True, extend=True):
         # y = np.concatenate([spline(x_below), y, spline(x_above)])
         # x = np.concatenate([x_below, x, x_above])
         s = CubicSmoothingSpline(x, y, smooth=None).spline
-        if ddz: 
+        if ddz:
             return s(new_x), s.derivative(nu=1)(new_x)
-        else: 
+        else:
             return s(new_x)
     else:
         # now use a smoothing spline

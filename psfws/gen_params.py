@@ -22,10 +22,10 @@ class ParameterGenerator():
     Attributes
     ----------
     data_fa : pandas dataframe
-        Free atmosphere (>1km above ground) forecasting data, with DateTimes as 
-        index and columns 'u', 'v', 'speed', 'dir', 't', and 'p'. Each entry is 
+        Free atmosphere (>1km above ground) forecasting data, with DateTimes as
+        index and columns 'u', 'v', 'speed', 'dir', 't', and 'p'. Each entry is
         a ndarray of values for each altitude, with speed/velocity components
-        in m/s, directions in degrees, temperatures in Kelvin, and pressures in 
+        in m/s, directions in degrees, temperatures in Kelvin, and pressures in
         mbar. The u/v components of velocity correspond to north/south winds,
         respectively, and the wind direction is given as degrees west of north.
     data_gl : pandas dataframe
@@ -37,9 +37,9 @@ class ParameterGenerator():
     h0 : float
         Altitude of observatory, in km.
     j_pdf : dict
-        Dictionary containing parameters for lognormal PDFs of turbulence 
-        integrals for both the ground layer and the free atmosphere values. Keys
-        are 'gl' and 'fa' respecitvely.
+        Dictionary containing parameters for lognormal PDFs of turbulence
+        integrals for both the ground layer and the free atmosphere values.
+        Keys are 'gl' and 'fa' respecitvely.
     rho_jv : float or None (default)
         Correlation coefficient between the ground layer wind speed and ground
         turbulence integral. If None, no correlation is included.
@@ -58,7 +58,7 @@ class ParameterGenerator():
         'kind' keyword (str, either 'cubic' or 'gp' for Gaussian Process).
 
     get_fa_cn2(pt)
-        Get free atmosphere Cn2 profile for requested datapoint. 
+        Get free atmosphere Cn2 profile for requested datapoint.
 
     get_turbulence_integral(pt, layers='auto')
         Get set of turbulence integrals associated for requested datapoint pt.
@@ -119,10 +119,10 @@ class ParameterGenerator():
             (default: ['2019-05-01', '2019-10-31'])
 
         rho_j_wind : float (default is None)
-            Desired correlation coefficient between ground wind speed and 
+            Desired correlation coefficient between ground wind speed and
             turbulence integral. If None, no correlation is included. If a
             float value is specified, the joint PDF of wind values and ground
-            turbulence is generated and the turbulence values are stored in 
+            turbulence is generated and the turbulence values are stored in
             data_gl as the 'j_gl' column.
 
         """
@@ -144,7 +144,7 @@ class ParameterGenerator():
         self.h0, self.j_pdf = utils.initialize_location(location)
         # TO DO: put this rho in the location specific utils?
         self.rho_jv = rho_j_wind
-        
+
         # load and match GFS/telemetry data
         self._load_data(date_range)
 
@@ -154,8 +154,8 @@ class ParameterGenerator():
             # draw JGL values
             j_gl = self.j_pdf['gl'].rvs(size=self.N, random_state=self._rng)
             # correlate and store modified dataframe
-            self.data_gl = utils.correlate_marginals(self.data_gl, 
-                                                     j_gl, 
+            self.data_gl = utils.correlate_marginals(self.data_gl,
+                                                     j_gl,
                                                      self.rho_jv,
                                                      self._rng)
 
@@ -172,8 +172,8 @@ class ParameterGenerator():
         # first, find GFS dates within the date range desired
         gfs_dates = gfs[dr[0]:dr[1]].index
 
-        # TO DO: wrap following in if statement if using telemetry 
-        
+        # TO DO: wrap following in if statement if using telemetry
+
         raw_telemetry = pickle.load(open(self._file_paths['telemetry'], 'rb'))
         telemetry = utils.process_telemetry(raw_telemetry)
 
@@ -184,7 +184,7 @@ class ParameterGenerator():
         # store results
         # TO DO: or if using gfs, select just the ground layer
         self.data_gl = pd.DataFrame(data=tel_m, index=dates_m)
-        
+
         gfs = gfs.loc[dates_m]
         self.N = len(gfs)
 
@@ -216,28 +216,28 @@ class ParameterGenerator():
         fa = self.data_fa.loc[pt]
 
         direction = np.hstack([gl.at['dir'], fa.at['dir']])
-        
-        return {'u': np.hstack([gl.at['u'], fa.at['u']]), 
-                'v': np.hstack([gl.at['v'], fa.at['v']]), 
-                'speed': np.hstack([gl.at['speed'], fa.at['speed']]), 
-                't': np.hstack([gl.at['t'], fa.at['t']]), 
+
+        return {'u': np.hstack([gl.at['u'], fa.at['u']]),
+                'v': np.hstack([gl.at['v'], fa.at['v']]),
+                'speed': np.hstack([gl.at['speed'], fa.at['speed']]),
+                't': np.hstack([gl.at['t'], fa.at['t']]),
                 'h': np.hstack([self.h0, self.h_fa]),
-                'direction': utils.smooth_direction(direction), 
+                'direction': utils.smooth_direction(direction),
                 'p': fa.at['p']}
 
     def _interpolate(self, p_dict, h_out, extend=True):
         """Get interpolations & derivatives of params at new heights h_out."""
-        # Note: multipying everything by 1000 (to m) because of the derivatives. 
+        # Note: multipying everything by 1000 (to m) for unit consistency.
         out = {}
         for k in ['u', 'v', 't']:
             out[k], out[f'd{k}dz'] = utils.interpolate(p_dict['h'] * 1000,
-                                                       p_dict[k], 
+                                                       p_dict[k],
                                                        h_out * 1000,
                                                        extend=extend)
 
         # special case:
         out['p'], out['dpdz'] = utils.interpolate(self.h_fa * 1000,
-                                                  p_dict['p'], 
+                                                  p_dict['p'],
                                                   h_out * 1000)
         out['direction'] = utils.smooth_direction(utils.to_direction(out['v'],
                                                                      out['u']))
@@ -248,19 +248,20 @@ class ParameterGenerator():
 
     def _draw_j(self, pt=None):
         """Draw values for ground and free atmosphere turbulence."""
-        a = 10**(-13) # because PDFs are in units of 10^-13 m^1/3!
+        a = 10**(-13)  # because PDFs are in units of 10^-13 m^1/3!
         if self.rho_jv is None:
-            return (self.j_pdf['fa'].rvs(random_state=self._rng) * a, 
+            return (self.j_pdf['fa'].rvs(random_state=self._rng) * a,
                     self.j_pdf['gl'].rvs(random_state=self._rng) * a)
         else:
             # TO DO: add a check for pt being a date
-            # as written, assumes pt is a date, pick corresponding GL integral 
+            # as written, assumes pt is a date, pick corresponding GL integral
             return (self.j_pdf['fa'].rvs(random_state=self._rng) * a,
                     self.data_gl.at[pt, 'j_gl'] * a)
 
     def get_fa_cn2(self, pt):
-        """Get free atmosphere Cn2 and h arrays for datapoint with index pt, 
-        using empirical model from Osborn et al 2018: 
+        """Get free atmosphere Cn2 and h arrays for datapoint with index pt.
+
+        Empirical model for Cn2 from Osborn et al 2018:
         https://doi.org/10.1093/mnras/sty1898.
 
         """
@@ -292,7 +293,7 @@ class ParameterGenerator():
         h_maxspd = utils.find_max_median(all_speeds, self.h_fa,
                                          h_interp, self.h0)
 
-        # interpolate the median cn2 to find height of max 
+        # interpolate the median cn2 to find height of max
         # don't change k here because don't care about absolute amplitude
         cn2, h_cn2 = self.get_cn2_all()
         h_maxcn2 = utils.find_max_median(cn2, h_cn2, h_interp, self.h0)
@@ -349,7 +350,7 @@ class ParameterGenerator():
         """Return integrated Cn2 profile for datapoint with index pt."""
         # draw turbulence integral values from PDFs:
         j_fa, j_gl = self._draw_j(pt=pt)
-        
+
         fa_ws, _, fa_layers = self._integrate_cn2(pt, layers=layers)
         # total FA value scales the FA weights from integrated Osborn model
         fa_ws = [w * j_fa / np.sum(fa_ws) for w in fa_ws]
