@@ -4,7 +4,6 @@ import numpy as np
 import pandas as pd
 from scipy.interpolate import UnivariateSpline, make_interp_spline
 from scipy.integrate import trapz
-from csaps import CubicSmoothingSpline
 import scipy.stats
 
 
@@ -260,7 +259,7 @@ def match_telemetry(telemetry, gfs_dates):
             gfs_dates[ids_to_keep])
 
 
-def interpolate(x, y, new_x, ddz=True, extend=True):
+def interpolate(x, y, new_x, ddz=True, s=None):
     """Interpolate 1D array y at values x to new_x values.
 
     Parameters
@@ -271,8 +270,11 @@ def interpolate(x, y, new_x, ddz=True, extend=True):
         1D array to interpolate
     new_x : array
         x values of desired interpolated output
-    ddz : bool
+    ddz : bool (default True)
         Whether or not to return the derivative of y wrt z
+    s : float or None (Default)
+        Smoothing factor used to choose number of knots. Use None to let
+        scipy use their best estimate. Use s=0 for perfect interpolation.
 
     Returns
     -------
@@ -280,29 +282,24 @@ def interpolate(x, y, new_x, ddz=True, extend=True):
         dydz, derivative of new_y at positions new_x, if ddz=True
 
     """
-    if extend:
-        # make a spline and fix constant first derivative at the boundary
-        # spline = make_interp_spline(x, y, bc_type='natural')
-        # # get the spline extrapolation above/below data region (ok bc f'=const)
-        # delta_x = x[1]-x[0]
-        # x_below = np.linspace(x[0]-2*delta_x, x[0], 20)
-        # x_above = np.linspace(x[-1], x[-1]+2*delta_x, 20)
-        # y = np.concatenate([spline(x_below), y, spline(x_above)])
-        # x = np.concatenate([x_below, x, x_above])
-        s = CubicSmoothingSpline(x, y, smooth=None).spline
-        if ddz:
-            return s(new_x), s.derivative(nu=1)(new_x)
-        else:
-            return s(new_x)
-    else:
-        # now use a smoothing spline
-        f_y = UnivariateSpline(x, y, s=s)
+    # if you want to use points above/below data to improve edge interpolation:
+    # make a spline and fix constant first derivative at the boundary
+    # spline = make_interp_spline(x, y, bc_type='natural')
+    # # get the spline extrapolation above/below data region (ok bc f'=const)
+    # delta_x = x[1]-x[0]
+    # x_below = np.linspace(x[0]-2*delta_x, x[0], 20)
+    # x_above = np.linspace(x[-1], x[-1]+2*delta_x, 20)
+    # y = np.concatenate([spline(x_below), y, spline(x_above)])
+    # x = np.concatenate([x_below, x, x_above])
 
-        if ddz:
-            dfydz = f_y.derivative()
-            return f_y(new_x), dfydz(new_x)
-        else:
-            return f_y(new_x)
+    # this is a smoothing spline unless s=0
+    f_y = UnivariateSpline(x, y, s=s)
+
+    if ddz:
+        dfydz = f_y.derivative()
+        return f_y(new_x), dfydz(new_x)
+    else:
+        return f_y(new_x)
 
 
 def osborn(inputs):
