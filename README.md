@@ -1,3 +1,5 @@
+[![test](https://github.com/LSSTDESC/psf-weather-station/actions/workflows/test.yaml/badge.svg)](https://github.com/LSSTDESC/psf-weather-station/actions/workflows/test.yaml)
+
 # psf-weather-station
 Generate realistic wind and turbulence integral parameters for atmospheric point-spread function simulations.
 
