@@ -226,7 +226,7 @@ class ParameterGenerator():
                 'direction': utils.smooth_direction(direction),
                 'p': fa.at['p']}
 
-    def _interpolate(self, p_dict, h_out, extend=True):
+    def _interpolate(self, p_dict, h_out, s=None):
         """Get interpolations & derivatives of params at new heights h_out."""
         # Note: multipying everything by 1000 (to m) for unit consistency.
         out = {}
@@ -234,12 +234,13 @@ class ParameterGenerator():
             out[k], out[f'd{k}dz'] = utils.interpolate(p_dict['h'] * 1000,
                                                        p_dict[k],
                                                        h_out * 1000,
-                                                       extend=extend)
+                                                       s=s)
 
         # special case:
         out['p'], out['dpdz'] = utils.interpolate(self.h_fa * 1000,
                                                   p_dict['p'],
-                                                  h_out * 1000)
+                                                  h_out * 1000,
+                                                  s=s)
         out['direction'] = utils.smooth_direction(utils.to_direction(out['v'],
                                                                      out['u']))
         out['speed'] = np.hypot(out['u'], out['v'])
@@ -359,12 +360,12 @@ class ParameterGenerator():
         # return integrated turbulence
         return [j_gl] + fa_ws, [self.h0] + fa_layers
 
-    def get_param_interpolation(self, pt, h_out, extend=True):
+    def get_param_interpolation(self, pt, h_out, s=None):
         """Return winds for dataset with index pt interpolated to h_out."""
         p_dict = self.get_raw_measurements(pt)
-        return self._interpolate(p_dict, h_out, extend)
+        return self._interpolate(p_dict, h_out, s)
 
-    def draw_parameters(self, layers='auto'):
+    def draw_parameters(self, layers='auto', s=None):
         """Draw a random, full set of parameters.
 
         Parameters: layers sets output altitudes; either array of values, or
@@ -380,7 +381,7 @@ class ParameterGenerator():
         pt = self._rng.choice(self.data_fa.index)
 
         j, layers = self.get_turbulence_integral(pt, layers='auto')
-        params = self.get_param_interpolation(pt, layers)
+        params = self.get_param_interpolation(pt, layers, s=s)
 
         params['j'] = j
 
