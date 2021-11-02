@@ -127,7 +127,7 @@ class ParameterGenerator():
 
         """
         # set up the paths to data files, and check they exist.
-        psfws_base = pathlib.Path(__file__).parents[1].absolute()
+        psfws_base = pathlib.Path(__file__).parents[0].absolute()
 
         self._file_paths = \
             {'gfs_data': pathlib.Path.joinpath(psfws_base, gfs_file),
@@ -135,6 +135,7 @@ class ParameterGenerator():
 
         for file_path in self._file_paths.values():
             if not file_path.is_file():
+                print(f'code running from: {psfws_base}')
                 raise FileNotFoundError(f'file {file_path} not found!')
 
         # set up random number generator with seed, if given
