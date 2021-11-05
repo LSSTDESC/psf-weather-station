@@ -86,7 +86,7 @@ class ParameterGenerator():
 
     def __init__(self, location='cerro-pachon', seed=None,
                  date_range=['2019-05-01', '2019-10-31'],
-                 gfs_file='data/gfs_-30.0_289.5_20190501-20191101.pkl',
+                 forecast_file='data/gfs_-30.0_289.5_20190501-20191101.pkl',
                  telemetry_file='data/tel_dict_CP_20190501-20191101.pkl',
                  rho_j_wind=None):
         """Initialize generator and process input data.
@@ -109,7 +109,7 @@ class ParameterGenerator():
             Path to file of telemetry data (default is
             'data/tel_dict_CP_20190501-20191101.pkl').
 
-        gfs_file : str
+        forecast_file : str
             Path to file of NOAA GFS data (default is
             'data/gfswinds_cp_20190501-20191031.pkl').
 
@@ -130,7 +130,7 @@ class ParameterGenerator():
         psfws_base = pathlib.Path(__file__).parents[0].absolute()
 
         self._file_paths = \
-            {'gfs_data': pathlib.Path.joinpath(psfws_base, gfs_file),
+            {'forecast_data': pathlib.Path.joinpath(psfws_base, forecast_file),
              'telemetry': pathlib.Path.joinpath(psfws_base, telemetry_file)}
 
         for file_path in self._file_paths.values():
@@ -146,7 +146,7 @@ class ParameterGenerator():
         # TO DO: put this rho in the location specific utils?
         self.rho_jv = rho_j_wind
 
-        # load and match GFS/telemetry data
+        # load and match forecast/telemetry data
         self._load_data(date_range)
 
         # if using correlation between wind speed and ground turbulence,
@@ -161,17 +161,17 @@ class ParameterGenerator():
                                                      self._rng)
 
     def _load_data(self, dr=['2019-05-01', '2019-10-31']):
-        """Load data from GFS and telemetry pickle files, match, and store."""
-        gfs = pickle.load(open(self._file_paths['gfs_data'], 'rb'))
-        gfs, h_fa = utils.process_gfs(gfs)
+        """Load data from forecast, telemetry files, match, and store."""
+        forecast = pickle.load(open(self._file_paths['forecast_data'], 'rb'))
+        forecast, h_fa = utils.process_forecast(forecast)
 
-        # set index for lowest GFS data to use according to observatory height:
-        # don't use anything lower than 1km above ground
+        # set index for lowest forecast data to use according to observatory
+        # height: don't use anything lower than 1km above ground
         self._fa_stop = max([10, np.where(h_fa > self.h0 + 1)[0][0]])
         self.h_fa = h_fa[self._fa_stop:]
 
-        # first, find GFS dates within the date range desired
-        gfs_dates = gfs[dr[0]:dr[1]].index
+        # first, find forecast dates within the date range desired
+        forecast_dates = forecast[dr[0]:dr[1]].index
 
         # TO DO: wrap following in if statement if using telemetry
 
@@ -179,20 +179,21 @@ class ParameterGenerator():
         telemetry = utils.process_telemetry(raw_telemetry)
 
         # this function returns dict of telemetry medians within
-        # 30 mins of each GFS datapoint and datetimes of these
-        tel_m, dates_m = utils.match_telemetry(telemetry, gfs_dates)
+        # 30 mins of each forecast datapoint and datetimes of these
+        tel_m, dates_m = utils.match_telemetry(telemetry, forecast_dates)
 
         # store results
-        # TO DO: or if using gfs, select just the ground layer
+        # TO DO: or if using forecast, select just the ground layer
         self.data_gl = pd.DataFrame(data=tel_m, index=dates_m)
 
-        gfs = gfs.loc[dates_m]
-        self.N = len(gfs)
+        forecast = forecast.loc[dates_m]
+        self.N = len(forecast)
 
         # FA data a bit more tricky... just want to keep >1km from ground?
         for k in ['u', 'v', 't', 'p', 'speed', 'dir']:
-            gfs[k] = [gfs[k].values[i][self._fa_stop:] for i in range(self.N)]
-        self.data_fa = gfs
+            forecast[k] = [forecast[k].values[i][self._fa_stop:]
+                           for i in range(self.N)]
+        self.data_fa = forecast
 
     def get_raw_measurements(self, pt):
         """Get a matched set of measurements from datapoint with index pt.
@@ -205,7 +206,7 @@ class ParameterGenerator():
         Returns
         -------
         dict of wind and temperature measurements, made of paired telemetry and
-        GFS data for integer index pt.
+        forecast data for integer index pt.
         Keys are 'u' and 'v' for arrays of velocity components, and 'speed' and
         'direction', 'temp' for temperatures, and 'h' gives array of altitudes
         for all measurements.
@@ -290,7 +291,7 @@ class ParameterGenerator():
         # make an array of heights for interpolation
         h_interp = np.linspace(self.h0, max(self.h_fa), 500)
 
-        # interpolate the median speeds from GFS to find height of max
+        # interpolate the median speeds from forecast to find height of max
         all_speeds = [i for i in self.data_fa['speed'].values]
         h_maxspd = utils.find_max_median(all_speeds, self.h_fa,
                                          h_interp, self.h0)
