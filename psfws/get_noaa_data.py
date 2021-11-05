@@ -68,14 +68,14 @@ def _load_uvtp(date, time, latitude=-30, longitude=289.5):
         u_values = np.zeros(31)
         v_values = np.zeros(31)
         p_values = np.zeros(31)
-        
+
         # set location range
         approx_lat = [latitude-0.5, latitude+0.5]
         approx_long = [longitude-0.5, longitude+0.5]
 
         # extract u and v values at specific lat/long for each altitude
         for ins, outs in zip([uwind, vwind], [u_values, v_values]):
-            for i in range(1,32):
+            for i in range(1, 32):
                 d, lat, lon = ins[i].data(lat1=approx_lat[0],
                                           lat2=approx_lat[1],
                                           lon1=approx_long[0],
@@ -84,7 +84,7 @@ def _load_uvtp(date, time, latitude=-30, longitude=289.5):
                                        (lon == longitude))][0]
                 p_values[i-1] = ins[i]['level']
 
-        # do temperature separately because inconsistent altitude info: use 
+        # do temperature separately because inconsistent altitude info: use
         # p_values from wind to get consistent levels:
         t_values = []
         for t in temp[:35]:
@@ -96,7 +96,7 @@ def _load_uvtp(date, time, latitude=-30, longitude=289.5):
                 tmp = d[np.where((lat == latitude) & (lon == longitude))][0]
                 t_values.append(tmp)
 
-        return {'u': u_values, 'v': v_values, 
+        return {'u': u_values, 'v': v_values,
                 't': np.array(t_values), 'p': p_values}
 
 

@@ -37,7 +37,7 @@ def correlate_marginals(X, y, rho, rng):
     y_srtd = np.sort(y)
 
     # 15 is ad hoc; seems to work to ensure loops through x at least once
-    swap_window = (y_srtd[-1]-y_srtd[0]) / 15
+    swp_window = (y_srtd[-1]-y_srtd[0]) / 15
     N = len(y)
 
     # loop ten times over the dataset
@@ -45,11 +45,11 @@ def correlate_marginals(X, y, rho, rng):
         # index of the first pair in a swap
         i_first = i % N
         # find list of points within the swap_window of this first point
-        valid_indices = np.argwhere(abs(y_srtd - y_srtd[i_first]) < swap_window)
+        valid_indices = np.argwhere(abs(y_srtd - y_srtd[i_first]) < swp_window)
         # randomly chose one of these as the swap pair
-        i_swap = rng.choice(valid_indices.flatten())
+        i_swp = rng.choice(valid_indices.flatten())
         # swap entries
-        y_srtd[i_first], y_srtd[i_swap] = y_srtd[i_swap], y_srtd[i_first]
+        y_srtd[i_first], y_srtd[i_swp] = y_srtd[i_swp], y_srtd[i_first]
 
         if np.corrcoef(X['speed'], y_srtd)[0][1] < rho:
             break
