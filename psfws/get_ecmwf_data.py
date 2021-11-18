@@ -43,29 +43,63 @@ def _download_ecmwf(m1, m2, lat, lon, save_path):
 def _get_month_edges(date):
     """Return Timestamps for start and end of the month of given date."""
     month_start = pd.Timestamp(year=date.year, month=date.month, day=1)
-    next_month_start = pd.Timestamp(year=date.year, month=date.month+1, day=1)
-    return month_start, next_month_start - pd.Timedelta(days=1)
+    if date.month == 12:
+        month_end = pd.Timestamp(year=date.year, month=date.month, day=31)
+    else:
+        next_month = pd.Timestamp(year=date.year, month=date.month+1, day=1)
+        month_end = next_month - pd.Timedelta(days=1)
+    return month_start, month_end
 
 
-def _get_iter_dates(start_date, end_date):
+def _get_iter_months(start_date, end_date):
     """Return list of date pairs to iterate over months of interest."""
     d1 = pd.Timestamp(start_date)
     d2 = pd.Timestamp(end_date)
 
-    # gonna assume for now that the years are the same
+    # years are the same for this function
     if d1.month == d2.month:
         dates = [(d1, d2)]
     if d1.month == d2.month - 1:
         dates = [(d1, _get_month_edges(d1)[1]), (_get_month_edges(d2)[0], d2)]
     else:
         middle_months = np.arange(d1.month + 1, d2.month)
-        # day doesn't matter but needed as argument
+        # day doesn't matter but needed as argument to Timestamp
         middle_pairs = [_get_month_edges(pd.Timestamp(year=d1.year,
                                                       month=m, day=1))
                         for m in middle_months]
 
         dates = [(d1, _get_month_edges(d1)[1])] + middle_pairs + \
                 [(_get_month_edges(d2)[0], d2)]
+
+    return dates
+
+
+def _get_iter_dates(start_date, end_date):
+    """Return list of date pairs in month increments over dates of interest."""
+    d1 = pd.Timestamp(start_date)
+    d2 = pd.Timestamp(end_date)
+
+    # if years are the same:
+    if d1.year == d2.year:
+        dates = _get_iter_months(d1, d2)
+    # if years are adjacent, only have the edge cases:
+    elif d1.year == d2.year - 1:
+        y1_end = pd.Timestamp(year=d1.year, month=12, day=31)
+        y2_start = pd.Timestamp(year=d2.year, month=1, day=1)
+        dates = _get_iter_months(d1, y1_end) + _get_iter_months(y2_start, d2)
+    else:
+        # iterate through the years in between d1 and d2 (inclusive) and 
+        # return all the resulting iter_month results. 
+        y1_end = pd.Timestamp(year=d1.year, month=12, day=31)
+        dates = [_get_iter_months(d1, y1_end)]
+
+        for y in np.arange(d1.year + 1, d2.year):
+            y_start = pd.Timestamp(year=y, month=1, day=1)
+            y_end = pd.Timestamp(year=y, month=12, day=31)
+            dates += _get_iter_months(y_start, y_end)
+
+        y2_start = pd.Timestamp(year=d2.year, month=1, day=1)
+        dates += _get_iter_months(y2_start, d2)
 
     return dates
 
