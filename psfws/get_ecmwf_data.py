@@ -1,4 +1,4 @@
-"""Functions to download and process ECMWF forecast data."""
+"""Functions to download and reformat ECMWF forecast data."""
 
 import numpy as np
 import pandas as pd
@@ -13,7 +13,22 @@ DATA_DIR = pathlib.Path.joinpath(PKG_BASE, 'data/')
 def _download_ecmwf(m1, m2, lat, lon, save_path):
     """Download ECMWF model level data.
 
-    Note: best practice is to query month by month.
+    Parameters
+    ==========
+    m1 : str
+        starting date of data to collect, formatted as "YYYY-MM-DD".
+    m2 : str
+        ending date of data to collect, formatted as "YYYY-MM-DD".
+    lat : float
+        latitude of site of interest, to nearest 0.25 degrees
+    lon : float
+        longitude of site of interest, to nearest 0.25 degrees
+    save_path : str
+        path to file to save the downloaded info, should be in .grib format.
+
+    Notes: 
+    - best practice is to query month by month, so this function is inteded to
+      be called >1 times if the desired date range spans multiple months.
     """
     import cdsapi
     cds = cdsapi.Client()
@@ -29,7 +44,7 @@ def _download_ecmwf(m1, m2, lat, lon, save_path):
                   'time': '00/06/12/18',  # output times to download
                   'date': f"{m1}/to/{m2}",
                   'class': 'ea',
-                  'param': '130/131/132',  # codes for temp, wind speeds
+                  'param': '130/131/132',  # codes for temp, wind speed comps
                   'expver': '1',
                   'format': 'grib',  # output file format
                   'stream': 'oper',
@@ -52,7 +67,7 @@ def _get_month_edges(date):
 
 
 def _get_iter_months(start_date, end_date):
-    """Return list of date pairs to iterate over months of interest."""
+    """Return list of date pairs to iterate through months of interest."""
     d1 = pd.Timestamp(start_date)
     d2 = pd.Timestamp(end_date)
 
@@ -87,6 +102,7 @@ def _get_iter_dates(start_date, end_date):
         y1_end = pd.Timestamp(year=d1.year, month=12, day=31)
         y2_start = pd.Timestamp(year=d2.year, month=1, day=1)
         dates = _get_iter_months(d1, y1_end) + _get_iter_months(y2_start, d2)
+    # otherwise, iterate through years and get the months from _get_iter_months
     else:
         # iterate through the years in between d1 and d2 (inclusive) and 
         # return all the resulting iter_month results. 
@@ -105,7 +121,7 @@ def _get_iter_dates(start_date, end_date):
 
 
 def _process_grib(infile, t, u, v):
-    """Process desired grib file, add data to t,u,v dicts."""
+    """Open downloaded grib file, add data to t,u,v dicts."""
     with eccodes.GribFile(infile) as grib:
         for msg in grib:
             ts = pd.Timestamp(year=msg['year'], month=msg['month'],
@@ -129,8 +145,35 @@ def _delete_grib_file(file_name):
         print("Error: %s : %s" % (file_path, e.strerror))
 
 
-def get_ecmwf_data(start_date, end_date, lat, lon, grib_dir, delete):
-    """Download and process ECMWF forecast grib files to a pandas dataframe."""
+def get_ecmwf_data(start_date, end_date, lat, lon, grib_dir=None, delete=False):
+    """Download and process ECMWF forecast grib files to a pandas dataframe.
+
+    Download ECMWF model level data, process the downloaded files, and save the
+    forecast information to a pickled pandas dataframe.
+
+    Note: will check for existing grib files for each month within date range,
+    so will not redownload data that already exists on disc.
+
+    Parameters
+    ==========
+    start_date : str
+        Starting date of data to collect, in any format that pd.Timestamp will
+        accept, for example 'YYYYMMDD'.
+    end_date : str
+        Ending date of data to collect, in any format that pd.Timestamp will
+        accept, for example 'YYYYMMDD'.
+    lat : float
+        Latitude of site of interest, to nearest 0.25 degrees
+    lon : float
+        Longitude of site of interest, to nearest 0.25 degrees
+    grib_dir : str
+        Path to dir ini which to save the raw grib files. Default is None, in
+        which case grib files will be stored in the package data directory.
+    delete : bool
+        Whether to delete the grib files once the info has been reformatted.
+        Default is False, so the files will be kept.
+
+    """
     import eccodes
 
     # download process is most efficient done monthly, so find all the dates
@@ -189,5 +232,6 @@ if __name__ == '__main__':
     # move CWD to data directory for easier downloading/etc
     os.chdir(DATA_DIR)
 
+    # call main function to execute the downloading/processing/saving
     get_ecmwf_data(args.d1, args.d2, args.lat, args.lon, args.grib_dir,
                    args.keep_grb)
