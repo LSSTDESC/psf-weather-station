@@ -166,9 +166,9 @@ def to_components(s, d):
 def process_forecast(df):
     """Return dataframe of processed global forecasting system data.
 
-    Input: dataframe of forecast obsevrations, cols = ['u', 'v', 't', 'p']
+    Input: dataframe of forecast obsevrations, cols = ['u', 'v', 't']
     Returns: dataframe of forecast observations,
-             cols = ['u', 'v', 't', 'p', 'speed', 'dir']
+             cols = ['u', 'v', 't', 'speed', 'dir']
 
     Processing steps:
     - reverse u, v, and t altitudes
@@ -179,9 +179,9 @@ def process_forecast(df):
     df = df.iloc[not_daytime].copy()
     n = len(df)
 
-    # reverse, and disregard the top 5 altitudes
-    for k in ['u', 'v', 't', 'p']:
-        df[k] = [df[k].values[i][::-1][:-5] for i in range(n)]
+    # reverse
+    for k in ['u', 'v', 't']:
+        df[k] = [df[k].values[i][::-1] for i in range(n)]
 
     df['speed'] = [np.hypot(df['u'].values[i], df['v'].values[i])
                    for i in range(n)]
@@ -189,20 +189,7 @@ def process_forecast(df):
     df['dir'] = [to_direction(df['v'].values[i], df['u'].values[i])
                  for i in range(n)]
 
-    # find altitudes of forecasts; all data have same pressures so take first
-    median_t = np.median([df['t'].values[i] for i in range(n)], axis=0)
-    h = pressure_to_h(df['p'].values[0], median_t)
-    return df, h
-
-
-def pressure_to_h(p, t):
-    """Convert array of pressure and temperature values to altitude."""
-    M = 28.96  # average mol. mass of atmosphere, in g/mol
-    g = 9.8  # accelerationg at the surface
-    R = 8.314  # gas constant, in J/mol/K
-    P0 = 1013  # pressure at sea level, in hPa (=mbar)
-
-    return (R * t) / (M * g) * np.log(P0 / p)
+    return df
 
 
 def match_telemetry(telemetry, forecast_dates):

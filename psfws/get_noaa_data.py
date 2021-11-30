@@ -41,7 +41,7 @@ def _delete_gfs_file(date, time):
 
 
 def _load_uvtp(date, time, latitude=-30, longitude=289.5):
-    """Load U and V componenents of wind for GFS file given date and time."""
+    """Load U, V, T componenents of wind for GFS file given date and time."""
     # do not want pygrib to be a dependency for the whole psfws package.
     import pygrib
 
@@ -96,8 +96,7 @@ def _load_uvtp(date, time, latitude=-30, longitude=289.5):
                 tmp = d[np.where((lat == latitude) & (lon == longitude))][0]
                 t_values.append(tmp)
 
-        return {'u': u_values, 'v': v_values,
-                't': np.array(t_values), 'p': p_values}
+        return {'u': u_values, 'v': v_values, 't': np.array(t_values)}
 
 
 def _datetime_range(start_date, end_date):

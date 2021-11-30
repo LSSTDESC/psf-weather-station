@@ -131,7 +131,8 @@ class ParameterGenerator():
 
         self._file_paths = \
             {'forecast_data': pathlib.Path.joinpath(psfws_base, forecast_file),
-             'telemetry': pathlib.Path.joinpath(psfws_base, telemetry_file)}
+             'telemetry': pathlib.Path.joinpath(psfws_base, telemetry_file),
+             'h_and_p': pathlib.Path.joinpath(psfws_base, 'data/p_and_h.p')}
 
         for file_path in self._file_paths.values():
             if not file_path.is_file():
@@ -163,12 +164,22 @@ class ParameterGenerator():
     def _load_data(self, dr=['2019-05-01', '2019-10-31']):
         """Load data from forecast, telemetry files, match, and store."""
         forecast = pickle.load(open(self._file_paths['forecast_data'], 'rb'))
-        forecast, h_fa = utils.process_forecast(forecast)
+        forecast = utils.process_forecast(forecast)
 
-        # set index for lowest forecast data to use according to observatory
-        # height: don't use anything lower than 1km above ground
-        self._fa_stop = max([10, np.where(h_fa > self.h0 + 1)[0][0]])
-        self.h_fa = h_fa[self._fa_stop:]
+        # load heights and pressures
+        h_and_p = pickle.load(open(self._file_paths['h_and_p'], 'rb'))
+        
+        # if forecast has many points, assume need ECWMF, otherwise GFS
+        src = 'ecwmf' if len(forecast.head(1).loc['u']) > 50 else 'noaa' 
+        # reverse these arrays to match forecast data order, convert h to m
+        self._all_h = [h/1000 for h in h_and_p[src]['h'][::-1]]
+        self.p = h_and_p[src]['p'][::-1]
+
+        # set indices for forecast data according to observatory altitude
+        # bounds: don't use anything < 1km or > 25km above ground
+        self._fab = (np.where(self._all_h > self.h0 + 1)[0][0],
+                     np.where(self._all_h > self.h0 + 25)[0][0])
+        self.h_fa = self.all_h[self._fab[0]:self._fab[1]]
 
         # first, find forecast dates within the date range desired
         forecast_dates = forecast[dr[0]:dr[1]].index
@@ -189,9 +200,9 @@ class ParameterGenerator():
         forecast = forecast.loc[dates_m]
         self.N = len(forecast)
 
-        # FA data a bit more tricky... just want to keep >1km from ground?
-        for k in ['u', 'v', 't', 'p', 'speed', 'dir']:
-            forecast[k] = [forecast[k].values[i][self._fa_stop:]
+        # FA data a bit tricky... do I only want to keep points within bounds?
+        for k in ['u', 'v', 't', 'speed', 'dir']:
+            forecast[k] = [forecast[k].values[i][self._fab[0]:self._fab[1]]
                            for i in range(self.N)]
         self.data_fa = forecast
 
@@ -224,8 +235,7 @@ class ParameterGenerator():
                 'speed': np.hstack([gl.at['speed'], fa.at['speed']]),
                 't': np.hstack([gl.at['t'], fa.at['t']]),
                 'h': np.hstack([self.h0, self.h_fa]),
-                'direction': utils.smooth_direction(direction),
-                'p': fa.at['p']}
+                'direction': utils.smooth_direction(direction)}
 
     def _interpolate(self, p_dict, h_out, s=None):
         """Get interpolations & derivatives of params at new heights h_out."""
@@ -238,8 +248,8 @@ class ParameterGenerator():
                                                        s=s)
 
         # special case:
-        out['p'], out['dpdz'] = utils.interpolate(self.h_fa * 1000,
-                                                  p_dict['p'],
+        out['p'], out['dpdz'] = utils.interpolate(self._all_h * 1000,
+                                                  self.p,
                                                   h_out * 1000,
                                                   s=s)
         out['direction'] = utils.smooth_direction(utils.to_direction(out['v'],
