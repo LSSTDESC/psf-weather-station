@@ -10,32 +10,42 @@ from psfws import utils
 class ParameterGenerator():
     """Class to generate realistic input parameters for atmospheric PSF sims.
 
-    This class uses two inputs: NOAA Global Forecasting System (GFS) outputs
-    and local wind measurements at the observatory. The repo already contains
-    these data for Cerro Pachon, and all defaults are set up to match this
-    location. Use of the code to generate parameters for Cerro Pachon (and
-    Cerro Telolo, nearby) is straightforward, but for use at other
-    observatories, users must supply input data: instructions
-    for downloading NOAA datasets and formatting telemetry are in the
-    repository README.
+    This class uses as main input global circulation model weather forecasting
+    outputs, from either the NOAA Global Forecasting System (GFS) analysis or
+    the European Center for Midrange Weather Forecasting (ECMWF) reanalysis 
+    dataset ERA5.
+    Optionally, local wind measurements from the site of interest may be used
+    to improve the accuracy of the outputs. The package contains these data
+    for Cerro Pachon, and all defaults are set up to match this location.
+    Use of the code to generate parameters for Cerro Pachon (and nearby Cerro 
+    Telolo, nearby) is straightforward, but for use at other observatories,
+    users must supply input data: instructions for downloading and formatting 
+    forecasting data/telemetry are in the README.
 
     Attributes
     ----------
     data_fa : pandas dataframe
-        Free atmosphere (>1km above ground) forecasting data, with DateTimes as
-        index and columns 'u', 'v', 'speed', 'dir', 't', and 'p'. Each entry is
-        a ndarray of values for each altitude, with speed/velocity components
-        in m/s, directions in degrees, temperatures in Kelvin, and pressures in
-        mbar. The u/v components of velocity correspond to north/south winds,
-        respectively, and the wind direction is given as degrees west of north.
+        Above ground forecasting data, with DateTimes as index and columns 'u',
+        'v', 'speed', 'dir', 't', and 'p'. Each entry is a ndarray of values
+        for each altitude, with speed/velocity components in m/s, directions in
+        degrees, temperatures in Kelvin, and pressures in mbar. The u/v
+        components of velocity correspond to north/south winds, respectively,
+        and the wind direction is given as degrees west of north.
+        To select data in the free atmosphere use the gl_end parameter, for
+        example: data_fa.at[pt,'v'][fa_start:]
     data_gl : pandas dataframe
         Ground layer data, with DateTimes as index and columns 'speed','dir',
         'u', 'v', 't', and optionally 'j_gl' (see rho_jv below). These values
         are temporally matched to data_fa, so have identical indicies.
-    h_fa : ndarray
+        The data are either telemetry, if a data file was given, or forecast
+        data interpolated to ground altitude.
+    h : ndarray
         Altitudes of free atmopshere forecasting data, in km.
     h0 : float
         Altitude of observatory, in km.
+    fa_start : int
+        Index of h corresponding to the start of the free atmosphere ~1km above 
+        ground, to use when selecting for free atmosphere parameters.
     j_pdf : dict
         Dictionary containing parameters for lognormal PDFs of turbulence
         integrals for both the ground layer and the free atmosphere values.
@@ -49,13 +59,14 @@ class ParameterGenerator():
 
     Methods
     -------
-    get_raw_wind(pt)
-        Get a matched set of wind measurements from datapoint with index pt.
+    get_raw_measurements(pt)
+        Get a matched set of measurements from datapoint with index pt.
 
-    get_wind_interpolation(pt, h_out, kind='gp')
-        Get set of wind measurements from datapoint with index pt, interpolated
-        to new altitudes h_out. Interpolation type can be specified with the
-        'kind' keyword (str, either 'cubic' or 'gp' for Gaussian Process).
+    get_param_interpolation(pt, h_out, s=None)
+        Get set of parameters from datapoint with index pt, interpolated
+        to new altitudes h_out. Smoothness of cubic interpolation can be
+        specified with keyword s: None for scipy optimized value, 0 for no 
+        smoothing.
 
     get_fa_cn2(pt)
         Get free atmosphere Cn2 profile for requested datapoint.
@@ -105,13 +116,14 @@ class ParameterGenerator():
         seed : int
             Seed to initialize random number generator (default is None)
 
-        telemetry_file : str
+        telemetry_file : str or None
             Path to file of telemetry data (default is
-            'data/tel_dict_CP_20190501-20191101.pkl').
+            'data/tel_dict_CP_20190501-20191101.pkl'). If None, forecast data
+            will be used for ground layer information.
 
         forecast_file : str
-            Path to file of NOAA GFS data (default is
-            'data/gfswinds_cp_20190501-20191031.pkl').
+            Path to file of weather forecast data (default is
+            'data/gfs_-30.0_289.5_20190501-20191101.pkl').
 
         date_range : list
             List of two strings representing dates, e.g. '2019-05-01'.
@@ -129,12 +141,16 @@ class ParameterGenerator():
         # set up the paths to data files, and check they exist.
         psfws_base = pathlib.Path(__file__).parents[0].absolute()
 
-        self._file_paths = \
+        self._paths = \
             {'forecast_data': pathlib.Path.joinpath(psfws_base, forecast_file),
-             'telemetry': pathlib.Path.joinpath(psfws_base, telemetry_file),
-             'h_and_p': pathlib.Path.joinpath(psfws_base, 'data/p_and_h.p')}
+             'p_and_h': pathlib.Path.joinpath(psfws_base, 'data/p_and_h.p')}
 
-        for file_path in self._file_paths.values():
+        if telemetry_file is not None:
+            self._file_paths['telemetry'] = pathlib.Path.joinpath(psfws_base, 
+                                                                  telemetry_file),
+             
+
+        for file_path in self._paths.values():
             if not file_path.is_file():
                 print(f'code running from: {psfws_base}')
                 raise FileNotFoundError(f'file {file_path} not found!')
@@ -161,51 +177,62 @@ class ParameterGenerator():
                                                      self.rho_jv,
                                                      self._rng)
 
-    def _load_data(self, dr=['2019-05-01', '2019-10-31']):
+    def _load_data(self, use_telemtry=True, dr=['2019-05-01', '2019-10-31']):
         """Load data from forecast, telemetry files, match, and store."""
-        forecast = pickle.load(open(self._file_paths['forecast_data'], 'rb'))
+        forecast = pickle.load(open(self._paths['forecast_data'], 'rb'))
         forecast = utils.process_forecast(forecast)
 
+        try:# first, find forecast dates within the date range desired
+            forecast_dates = forecast[dr[0]:dr[1]].index
+        except KeyError:
+            print("Requested dates are not within range of available data!")
+
         # load heights and pressures
-        h_and_p = pickle.load(open(self._file_paths['h_and_p'], 'rb'))
+        p_and_h = pickle.load(open(self._paths['p_and_h'], 'rb'))
+        src = 'ecwmf' if len(forecast.head(1).at['u']) > 50 else 'noaa' 
+        # reverse to match forecast data order, convert to m
+        h = [h/1000 for h in p_and_h[src]['h'][::-1]]
+
+        # find lower gl cutoff:
+        where_h0 = np.where(h > self.h0)[0][0]
+        # free atm ends at high altitude
+        where_end = np.where(h > self.h0 + 25)[0][0]
+
+        if use_telemetry:
+            raw_telemetry = pickle.load(open(self._paths['telemetry'], 'rb'))
+            telemetry = utils.process_telemetry(raw_telemetry)
+
+            # this function returns dict of telemetry medians within
+            # 30 mins of each forecast datapoint and datetimes of these
+            tel_m, dates_m = utils.match_telemetry(telemetry, forecast_dates)
+            self.data_gl = pd.DataFrame(data=tel_m, index=dates_m)
+            # only keep forecasts with matching telemetry dates
+            forecast = forecast.loc[dates_m]
+        else:
+            forecast = forecast.loc[forecast_dates]
+            # interpolate forecasts to bit above GL (by ~weather tower height)
+            gl = {}
+            for k in ['u', 'v', 't', 'speed', 'dir']:
+                gl[k] = np.array([utils.interpolate(h, f, 
+                                                    self.h0 + .05, ddz=False) 
+                                  for f in forecast.loc[k].values])
+            self.data_gl = pd.DataFrame(data=gl, index=forecast.index)
         
-        # if forecast has many points, assume need ECWMF, otherwise GFS
-        src = 'ecwmf' if len(forecast.head(1).loc['u']) > 50 else 'noaa' 
-        # reverse these arrays to match forecast data order, convert h to m
-        self._all_h = [h/1000 for h in h_and_p[src]['h'][::-1]]
-        self.p = h_and_p[src]['p'][::-1]
-
-        # set indices for forecast data according to observatory altitude
-        # bounds: don't use anything < 1km or > 25km above ground
-        self._fab = (np.where(self._all_h > self.h0 + 1)[0][0],
-                     np.where(self._all_h > self.h0 + 25)[0][0])
-        self.h_fa = self.all_h[self._fab[0]:self._fab[1]]
-
-        # first, find forecast dates within the date range desired
-        forecast_dates = forecast[dr[0]:dr[1]].index
-
-        # TO DO: wrap following in if statement if using telemetry
-
-        raw_telemetry = pickle.load(open(self._file_paths['telemetry'], 'rb'))
-        telemetry = utils.process_telemetry(raw_telemetry)
-
-        # this function returns dict of telemetry medians within
-        # 30 mins of each forecast datapoint and datetimes of these
-        tel_m, dates_m = utils.match_telemetry(telemetry, forecast_dates)
-
-        # store results
-        # TO DO: or if using forecast, select just the ground layer
-        self.data_gl = pd.DataFrame(data=tel_m, index=dates_m)
-
-        forecast = forecast.loc[dates_m]
+        # how many datapoints we have now after selections
         self.N = len(forecast)
 
-        # FA data a bit tricky... do I only want to keep points within bounds?
+        # save all forecast data only between ground and upper bound
+        self.h = h[where_h0:where_end]
+        self.p = p_and_h[src]['p'][::-1][where_h0:where_end]
+
         for k in ['u', 'v', 't', 'speed', 'dir']:
-            forecast[k] = [forecast[k].values[i][self._fab[0]:self._fab[1]]
+            forecast[k] = [forecast[k].values[i][where_h0:where_end] 
                            for i in range(self.N)]
         self.data_fa = forecast
 
+        # ground layer ends at ~1km above telescope, save for later 
+        self.fa_start = np.where(self.h > self.h0 + .8)[0][0]   
+        
     def get_raw_measurements(self, pt):
         """Get a matched set of measurements from datapoint with index pt.
 
@@ -234,7 +261,7 @@ class ParameterGenerator():
                 'v': np.hstack([gl.at['v'], fa.at['v']]),
                 'speed': np.hstack([gl.at['speed'], fa.at['speed']]),
                 't': np.hstack([gl.at['t'], fa.at['t']]),
-                'h': np.hstack([self.h0, self.h_fa]),
+                'h': np.hstack([self.h0, self.h]),
                 'direction': utils.smooth_direction(direction)}
 
     def _interpolate(self, p_dict, h_out, s=None):
@@ -248,7 +275,7 @@ class ParameterGenerator():
                                                        s=s)
 
         # special case:
-        out['p'], out['dpdz'] = utils.interpolate(self._all_h * 1000,
+        out['p'], out['dpdz'] = utils.interpolate(self.h * 1000,
                                                   self.p,
                                                   h_out * 1000,
                                                   s=s)
@@ -281,8 +308,8 @@ class ParameterGenerator():
         # pick out relevant wind data
         raw_p = self.get_raw_measurements(pt)
 
-        # only calculate Cn2 with this model starting 1km above ground
-        h_complete = np.linspace(self.h0 + 1, max(self.h_fa), 500)
+        # only calculate Cn2 with this model starting at FA start
+        h_complete = np.linspace(self.fa_start, max(self.h), 500)
         inputs = self._interpolate(raw_p, h_complete)
         cn2_complete = utils.osborn(inputs)
 
@@ -299,12 +326,11 @@ class ParameterGenerator():
     def _get_auto_layers(self, pt):
         """Return layer altitudes according to max wind speed & turbulence."""
         # make an array of heights for interpolation
-        h_interp = np.linspace(self.h0, max(self.h_fa), 500)
+        h_interp = np.linspace(self.h0, max(self.h), 500)
 
         # interpolate the median speeds from forecast to find height of max
         all_speeds = [i for i in self.data_fa['speed'].values]
-        h_maxspd = utils.find_max_median(all_speeds, self.h_fa,
-                                         h_interp, self.h0)
+        h_maxspd = utils.find_max_median(all_speeds, self.h, h_interp, self.h0)
 
         # interpolate the median cn2 to find height of max
         # don't change k here because don't care about absolute amplitude
@@ -343,7 +369,7 @@ class ParameterGenerator():
         integration bin centers (aka layers if not 'auto'), in km
 
         """
-        maxh = max(self.h_fa)
+        maxh = max(self.h)
         cn2, h = self.get_fa_cn2(pt)
 
         # define bins according to layers argument
