@@ -177,7 +177,7 @@ class ParameterGenerator():
                                                      self.rho_jv,
                                                      self._rng)
 
-    def _load_data(self, use_telemtry=True, dr=['2019-05-01', '2019-10-31']):
+    def _load_data(self, use_telemetry=True, dr=['2019-05-01', '2019-10-31']):
         """Load data from forecast, telemetry files, match, and store."""
         forecast = pickle.load(open(self._paths['forecast_data'], 'rb'))
         forecast = utils.process_forecast(forecast)
@@ -189,14 +189,14 @@ class ParameterGenerator():
 
         # load heights and pressures
         p_and_h = pickle.load(open(self._paths['p_and_h'], 'rb'))
-        src = 'ecwmf' if len(forecast.head(1).at['u']) > 50 else 'noaa' 
+        self.src = 'ecmwf' if len(forecast['u'].iat[0]) > 50 else 'noaa' 
         # reverse to match forecast data order, convert to m
-        h = [h/1000 for h in p_and_h[src]['h'][::-1]]
+        h = np.array([h/1000 for h in p_and_h[self.src]['h'][::-1]])
 
         # find lower gl cutoff:
         where_h0 = np.where(h > self.h0)[0][0]
         # free atm ends at high altitude
-        where_end = np.where(h > self.h0 + 25)[0][0]
+        where_end = np.where(h > self.h0 + 23)[0][0]
 
         if use_telemetry:
             raw_telemetry = pickle.load(open(self._paths['telemetry'], 'rb'))
@@ -223,7 +223,7 @@ class ParameterGenerator():
 
         # save all forecast data only between ground and upper bound
         self.h = h[where_h0:where_end]
-        self.p = p_and_h[src]['p'][::-1][where_h0:where_end]
+        self.p = p_and_h[self.src]['p'][::-1][where_h0:where_end]
 
         for k in ['u', 'v', 't', 'speed', 'dir']:
             forecast[k] = [forecast[k].values[i][where_h0:where_end] 
@@ -233,13 +233,13 @@ class ParameterGenerator():
         # ground layer ends at ~1km above telescope, save for later 
         self.fa_start = np.where(self.h > self.h0 + .8)[0][0]   
         
-    def get_raw_measurements(self, pt):
+    def get_measurements(self, pt):
         """Get a matched set of measurements from datapoint with index pt.
 
         Parameters
         ----------
         pt : int
-            date of output datapoint desired
+            pandas Timestamp of date/time of output datapoint desired
 
         Returns
         -------
@@ -252,8 +252,14 @@ class ParameterGenerator():
         respectively, and the wind direction is given as degrees west of north.
 
         """
-        gl = self.data_gl.loc[pt]
-        fa = self.data_fa.loc[pt]
+        try:
+            gl = self.data_gl.loc[pt]
+            fa = self.data_fa.loc[pt]
+        except KeyError:
+            if type(pt) == str:
+                raise TypeError(f'pt type must be pd.Timestamp not str!')
+            if type(pt) == pd.Timestamp:
+                raise KeyError(f'{pt} not found in data index!')
 
         direction = np.hstack([gl.at['dir'], fa.at['dir']])
 
@@ -266,15 +272,30 @@ class ParameterGenerator():
 
     def _interpolate(self, p_dict, h_out, s=None):
         """Get interpolations & derivatives of params at new heights h_out."""
-        # Note: multipying everything by 1000 (to m) for unit consistency.
+        # check h_out values
+        if max(h_out) > 100:
+            # 100km would be an outrageously high altitude, probably unit error
+            raise ValueError('Units of h should be in km, not m.')
+        if min(h_out) < min(self.h) or max(h_out) > max(self.h):
+            raise ValueError(f"Can't interpolate below {min(self.h)}" + \
+                             f" or above {max(self.h)}.")
+
+        # if 'h' in the dictionary, use those heights
+        if 'h' in p_dict.keys():
+            h_in = p_dict['h']
+        # otherwise inputs are raw FA values so use self.h
+        else:
+            h_in = self.h
+
         out = {}
+        # Note: multipying by 1000 (to m) for derivative units.
         for k in ['u', 'v', 't']:
-            out[k], out[f'd{k}dz'] = utils.interpolate(p_dict['h'] * 1000,
+            out[k], out[f'd{k}dz'] = utils.interpolate(h_in * 1000,
                                                        p_dict[k],
                                                        h_out * 1000,
                                                        s=s)
 
-        # special case:
+        # special case (h is always self.h here)
         out['p'], out['dpdz'] = utils.interpolate(self.h * 1000,
                                                   self.p,
                                                   h_out * 1000,
@@ -293,8 +314,7 @@ class ParameterGenerator():
             return (self.j_pdf['fa'].rvs(random_state=self._rng) * a,
                     self.j_pdf['gl'].rvs(random_state=self._rng) * a)
         else:
-            # TO DO: add a check for pt being a date
-            # as written, assumes pt is a date, pick corresponding GL integral
+            # assumes pt is a date, pick corresponding GL integral
             return (self.j_pdf['fa'].rvs(random_state=self._rng) * a,
                     self.data_gl.at[pt, 'j_gl'] * a)
 
@@ -306,11 +326,11 @@ class ParameterGenerator():
 
         """
         # pick out relevant wind data
-        raw_p = self.get_raw_measurements(pt)
+        fa = dict(self.data_fa.loc[pt])
 
         # only calculate Cn2 with this model starting at FA start
-        h_complete = np.linspace(self.fa_start, max(self.h), 500)
-        inputs = self._interpolate(raw_p, h_complete)
+        h_complete = np.linspace(self.h[self.fa_start], max(self.h), 500)
+        inputs = self._interpolate(fa, h_complete)
         cn2_complete = utils.osborn(inputs)
 
         return cn2_complete, h_complete
@@ -340,15 +360,15 @@ class ParameterGenerator():
         # sort the heights of max speed and max turbulence
         h3, h4 = np.sort([h_maxspd, h_maxcn2])
 
-        # raise the lowest layer slightly off of the ground
-        lowest = self.h0 + 0.250
+        # lowest boundary is start of free atmosphere
+        lowest = self.h[self.fa_start]
 
         h2 = np.mean([lowest, h3])
         h5 = np.mean([h4, 18])
 
-        return [lowest, h2, h3, h4, h5, 18]
+        return [h2, h3, h4, h5, 18]
 
-    def _integrate_cn2(self, pt, layers='auto'):
+    def _integrate_cn2(self, pt):
         """Calculate turbulence integral of given Cn2 at given layers.
 
         Parameters
@@ -372,54 +392,71 @@ class ParameterGenerator():
         maxh = max(self.h)
         cn2, h = self.get_fa_cn2(pt)
 
-        # define bins according to layers argument
-        if layers == 'auto':
-            bin_centers = self._get_auto_layers(pt)
-        else:
-            bin_centers = layers
-        edges = [self.h0] + [np.mean(bin_centers[i:i+2])
-                             for i in range(len(bin_centers)-1)] + [maxh]
+        # define bins, lower boundary is start of FA
+        bin_centers = self._get_auto_layers(pt)
+        edges = [self.h[self.fa_start]] + [np.mean(bin_centers[i:i+2])
+                                           for i in range(len(bin_centers)-1)]\
+                                           + [maxh]
 
         # integrate cn2 in bins defined by these edges
         j = utils.integrate_in_bins(cn2, h, edges)
         # return along with edges and bin centers
-        return j, np.array(edges), np.array(bin_centers)
+        return j, edges, bin_centers
 
-    def get_turbulence_integral(self, pt, layers='auto'):
+    def get_turbulence_integral(self, pt):
         """Return integrated Cn2 profile for datapoint with index pt."""
         # draw turbulence integral values from PDFs:
         j_fa, j_gl = self._draw_j(pt=pt)
 
-        fa_ws, _, fa_layers = self._integrate_cn2(pt, layers=layers)
+        fa_ws, _, fa_layers = self._integrate_cn2(pt)
         # total FA value scales the FA weights from integrated Osborn model
         fa_ws = [w * j_fa / np.sum(fa_ws) for w in fa_ws]
-
+        
         # return integrated turbulence
-        return [j_gl] + fa_ws, [self.h0] + fa_layers
+        return np.array([j_gl] + fa_ws), np.array([self.h0] + fa_layers)
 
-    def get_param_interpolation(self, pt, h_out, s=None):
-        """Return winds for dataset with index pt interpolated to h_out."""
-        p_dict = self.get_raw_measurements(pt)
-        return self._interpolate(p_dict, h_out, s)
+    def get_parameters(self, pt, s=None):
+        """Get parameters for dataset pt at automatically generated altitudes.
+
+        Parameters
+        ==========
+        pt : pd.Timestamp
+            timestamp corresponding to dataset of interest. Must be within the
+            index of self.data_* 
+
+        Returns
+        =======
+        parameters : dict
+            Keys are 'j' for turbulence integrals, 'u', 'v', 'speed',
+            'direction' for wind parameters, and 'h' for altitudes.
+            Turbulence integrals have dimension m^[1/3], u/v components of 
+            velocity correspond to north/east winds, respectively, and the 
+            wind direction is given as degrees west of north.
+
+        """
+        try:
+            fa = dict(self.data_fa.loc[pt])
+        except KeyError:
+            if type(pt) == str:
+                raise TypeError(f'pt type must be pd.Timestamp not str!')
+            if type(pt) == pd.Timestamp:
+                raise KeyError(f'{pt} not found in data index!')
+
+        j, h_layers = self.get_turbulence_integral(pt)
+        fa_params = self._interpolate(fa, h_layers[1:], s)
+        params = {}
+
+        # stack GL with FA interpolation results for each parameter
+        for kgl, kfa in zip(['u', 'v', 't', 'speed', 'dir'],
+                            ['u', 'v', 't', 'speed', 'direction']):
+            params[kfa] = np.hstack([self.data_gl.at[pt, kgl], fa_params[kfa]])
+
+        params['h'] = h_layers
+        params['j'] = j
+        return params
 
     def draw_parameters(self, layers='auto', s=None):
-        """Draw a random, full set of parameters.
-
-        Parameters: layers sets output altitudes; either array of values, or
-        'auto' for them to be automatically calculated based on wind and
-        turbulence maximums (default: 'auto').
-
-        Returns: dict of parameters. Keys are 'j' for turbulence integrals,
-        'u','v','speed','direction' for wind parameters, and 'h' for altitudes.
-        The u/v components of velocity correspond to north/south winds,
-        respectively, and the wind direction is given as degrees west of north.
-        The turbulence integrals have dimension m^[1/3].
-        """
+        """Draw a random datapoint from the dataset and return parameters."""
         pt = self._rng.choice(self.data_fa.index)
+        return self.get_parameters(pt, s)
 
-        j, layers = self.get_turbulence_integral(pt, layers='auto')
-        params = self.get_param_interpolation(pt, layers, s=s)
-
-        params['j'] = j
-
-        return params
