@@ -97,7 +97,7 @@ class ParameterGenerator():
 
     def __init__(self, location='cerro-pachon', seed=None,
                  date_range=['2019-05-01', '2019-10-31'],
-                 forecast_file='data/gfs_-30.0_289.5_20190501-20191101.pkl',
+                 forecast_file='data/ecmwf_-30.25_-70.75_20190501_20191031.p',
                  telemetry_file='data/tel_dict_CP_20190501-20191101.pkl',
                  rho_j_wind=None):
         """Initialize generator and process input data.
@@ -146,10 +146,9 @@ class ParameterGenerator():
              'p_and_h': pathlib.Path.joinpath(psfws_base, 'data/p_and_h.p')}
 
         if telemetry_file is not None:
-            self._file_paths['telemetry'] = pathlib.Path.joinpath(psfws_base, 
-                                                                  telemetry_file),
+            self._paths['telemetry'] = pathlib.Path.joinpath(psfws_base, 
+                                                             telemetry_file)
              
-
         for file_path in self._paths.values():
             if not file_path.is_file():
                 print(f'code running from: {psfws_base}')

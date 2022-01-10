@@ -6,8 +6,8 @@ import pickle
 import pathlib
 import os
 
-PKG_BASE = pathlib.Path(__file__).resolve().parents[1].absolute()
-DATA_DIR = pathlib.Path.joinpath(PKG_BASE, 'data/')
+PKG_BASE = pathlib.Path(__file__).resolve().parents[0].absolute()
+PKG_DATA_DIR = pathlib.Path.joinpath(PKG_BASE, 'data/')
 
 
 def _download_ecmwf(m1, m2, lat, lon, save_path):
@@ -122,6 +122,7 @@ def _get_iter_dates(start_date, end_date):
 
 def _process_grib(infile, t, u, v):
     """Open downloaded grib file, add data to t,u,v dicts."""
+    import eccodes
     with eccodes.GribFile(infile) as grib:
         for msg in grib:
             ts = pd.Timestamp(year=msg['year'], month=msg['month'],
@@ -134,10 +135,8 @@ def _process_grib(infile, t, u, v):
                         var_dict[ts] = [msg['values']]
 
 
-def _delete_grib_file(file_name):
+def _delete_grib_file(file_path):
     """Delete ECMWF file."""
-    file_path = pathlib.Path.joinpath(DATA_DIR, file_name)
-
     # delete the file:
     try:
         file_path.unlink()
@@ -167,23 +166,17 @@ def get_ecmwf_data(start_date, end_date, lat, lon, grib_dir=None, delete=False):
     lon : float
         Longitude of site of interest, to nearest 0.25 degrees
     grib_dir : str
-        Path to dir ini which to save the raw grib files. Default is None, in
+        Path to dir in which to save the raw grib files. Default is None, in
         which case grib files will be stored in the package data directory.
     delete : bool
         Whether to delete the grib files once the info has been reformatted.
         Default is False, so the files will be kept.
 
     """
-    import eccodes
-
     # download process is most efficient done monthly, so find all the dates
     # to iterate over to cover from desired start to end dates.
     dates = _get_iter_dates(start_date, end_date)
     f_template = 'ecmwf_{}_{}_{}_{}_uvt.grib'
-
-    # if no custom option defined, put the grib files in the data folder
-    if grib_dir is None:
-        grib_dir = DATA_DIR
 
     for m1, m2 in dates:
         grib_f = f_template.format(lat, lon,
@@ -203,16 +196,17 @@ def get_ecmwf_data(start_date, end_date, lat, lon, grib_dir=None, delete=False):
         grib_f = f_template.format(lat, lon,
                                    m1.strftime('%Y-%m-%d'),
                                    m2.strftime('%Y-%m-%d'))
-        _process_grib(grib_f, t, u, v)
+        grib_path = pathlib.Path.joinpath(grib_dir, grib_f)
+        _process_grib(grib_path, t, u, v)
 
         if delete:
-            _delete_grib_file(grib_f)
+            _delete_grib_file(grib_path)
 
     timestamps = t.keys()
     values_dict = [{'t': t[ts], 'u': u[ts], 'v':v[ts]} for ts in timestamps]
     tuv_df = pd.DataFrame(values_dict, index=timestamps)
 
-    save_file = f'ecmwf_{lat}_{lon}_{start_date}_{end_date}.grib'
+    save_file = f'ecmwf_{lat}_{lon}_{start_date}_{end_date}.p'
     save_path = pathlib.Path.joinpath(grib_dir, save_file)
     pickle.dump(tuv_df, open(save_path, 'wb'))
 
@@ -221,17 +215,25 @@ if __name__ == '__main__':
     from argparse import ArgumentParser
     parser = ArgumentParser()
     parser.add_argument('-lat', type=float, default=-30.25)
-    parser.add_argument('-long', type=float, default=-70.75)
+    parser.add_argument('-lon', type=float, default=-70.75)
     parser.add_argument('-d1', type=str, default='20190501')
     parser.add_argument('-d2', type=str, default='20190531')
     parser.add_argument('-grib_dir', type=str, default=None)
-    parser.add_argument('--keep_grb', type=bool, default=True,
-                        action='store_false')
+    parser.add_argument('--keep_grb', default=True, action='store_false')
     args = parser.parse_args()
-
+    
+    # if no custom option defined, put the grib files in the data folder
+    if args.grib_dir is None:
+        grib_dir = PKG_DATA_DIR
+    else:
+        grib_dir = pathlib.Path(args.grib_dir)
     # move CWD to data directory for easier downloading/etc
-    os.chdir(DATA_DIR)
+    os.chdir(grib_dir)
 
     # call main function to execute the downloading/processing/saving
-    get_ecmwf_data(args.d1, args.d2, args.lat, args.lon, args.grib_dir,
-                   args.keep_grb)
+    get_ecmwf_data(start_date=args.d1,
+                   end_date=args.d2,
+                   lat=args.lat,
+                   lon=args.lon,
+                   grib_dir=grib_dir,
+                   delete=args.keep_grb)

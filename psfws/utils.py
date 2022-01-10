@@ -189,6 +189,9 @@ def process_forecast(df):
     df['dir'] = [to_direction(df['v'].values[i], df['u'].values[i])
                  for i in range(n)]
 
+    if 'p' in df.columns:
+        df.drop('p', axis=1, inplace=True)
+
     return df
 
 

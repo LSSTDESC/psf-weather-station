@@ -1,3 +1,4 @@
+"""Tests of ParameterGenerator() methods involving turbulence parameters."""
 import psfws
 import numpy as np
 
@@ -27,8 +28,13 @@ def test_turbulence_draws():
                             err_msg='error reproducing turbulence integrals')
 
     # second, test with wind correlation for ground layer
-    j_gl_goal = 1.4466640614052723e-13
-    j_fa_goal = 3.3034875838653924e-14
+    if p.src == 'noaa':
+        j_gl_goal = 1.4466640614052723e-13
+        j_fa_goal = 3.3034875838653924e-14
+    elif p.src == 'ecmwf':
+        j_gl_goal = 7.676675326677918e-14
+        j_fa_goal = 6.408088187515762e-13
+        
     p = psfws.ParameterGenerator(rho_j_wind=.7, seed=2012)
     pt = p._rng.choice(p.data_fa.index)
     j_fa_res, j_gl_res = p._draw_j(pt)
