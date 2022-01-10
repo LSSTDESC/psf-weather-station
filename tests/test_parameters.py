@@ -4,6 +4,20 @@ import numpy as np
 import pandas as pd
 
 
+def dict_test_helper(thing, p_list, x):
+    """Test whether all keys in p_list exist in p_list and checks lengths."""
+    # this loop starts with testing x for later comparison
+    np.testing.assert_equal(x in thing.keys(), True,
+                                err_msg=f'{x} not in dict!')
+    for param in p_list:
+        if param != x:
+            # test that this parameter is in dict thing
+            np.testing.assert_equal(param in thing.keys(), True,
+                                    err_msg=f'{param} not in dict!')
+            np.testing.assert_equal(len(thing[param]), len(thing[x]),
+                                    err_msg="Parameter lengths don't match!")
+
+
 def test_init():
     """Unit tests to verify data was loaded correctly."""
     p = psfws.ParameterGenerator()
@@ -44,20 +58,6 @@ def test_init():
     theta_test = psfws.utils.to_direction(u, v)
     np.testing.assert_allclose(theta_test, theta_true, atol=.0001,
                                err_msg='Error in wind direction conversion!')
-
-
-def test_dict_helper(thing, p_list, x):
-    """Test whether all keys in p_list exist in p_list and checks lengths."""
-    # this loop starts with testing x for later comparison
-    np.testing.assert_equal(x in thing.keys(), True,
-                                err_msg=f'{x} not in dict!')
-    for param in p_list:
-        if param != x:
-            # test that this parameter is in dict thing
-            np.testing.assert_equal(param in thing.keys(), True,
-                                    err_msg=f'{param} not in dict!')
-            np.testing.assert_equal(len(thing[param]), len(thing[x]),
-                                    err_msg="Parameter lengths don't match!")
 
 
 def test_params():
