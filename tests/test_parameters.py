@@ -68,7 +68,7 @@ def test_params():
     # test get_raw_measurements()
     m_dict = p.get_measurements(pt)
     m_names = ['u', 'v', 'speed', 't', 'h', 'direction']
-    test_dict_helper(m_dict, m_names, 'h')
+    dict_test_helper(m_dict, m_names, 'h')
 
     # check error catching in get_raw_measurements()
     # for example, a string input format should raise TypeError
@@ -81,7 +81,7 @@ def test_params():
     # test get_parameters()
     p_dict = p.get_parameters(pt)
     p_names = ['h', 'u', 'v', 'speed', 't', 'direction', 'j']
-    test_dict_helper(p_dict, p_names, 'h')
+    dict_test_helper(p_dict, p_names, 'h')
 
     
 def test_interp():
