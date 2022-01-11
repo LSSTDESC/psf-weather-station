@@ -37,7 +37,7 @@ def correlate_marginals(X, y, rho, rng):
     y_srtd = np.sort(y)
 
     # 15 is ad hoc; seems to work to ensure loops through x at least once
-    swap_window = (y_srtd[-1]-y_srtd[0]) / 15
+    swp_window = (y_srtd[-1]-y_srtd[0]) / 15
     N = len(y)
 
     # loop ten times over the dataset
@@ -45,11 +45,11 @@ def correlate_marginals(X, y, rho, rng):
         # index of the first pair in a swap
         i_first = i % N
         # find list of points within the swap_window of this first point
-        valid_indices = np.argwhere(abs(y_srtd - y_srtd[i_first]) < swap_window)
+        valid_indices = np.argwhere(abs(y_srtd - y_srtd[i_first]) < swp_window)
         # randomly chose one of these as the swap pair
-        i_swap = rng.choice(valid_indices.flatten())
+        i_swp = rng.choice(valid_indices.flatten())
         # swap entries
-        y_srtd[i_first], y_srtd[i_swap] = y_srtd[i_swap], y_srtd[i_first]
+        y_srtd[i_first], y_srtd[i_swp] = y_srtd[i_swp], y_srtd[i_first]
 
         if np.corrcoef(X['speed'], y_srtd)[0][1] < rho:
             break
@@ -163,49 +163,39 @@ def to_components(s, d):
     return {'v': v, 'u': u}
 
 
-def process_gfs(gfs_df):
+def process_forecast(df):
     """Return dataframe of processed global forecasting system data.
 
-    Input: dataframe of GFS obsevrations, cols = ['u', 'v', 't', 'p']
-    Returns: dataframe of GFS observations,
-             cols = ['u', 'v', 't', 'p', 'speed', 'dir']
+    Input: dataframe of forecast obsevrations, cols = ['u', 'v', 't']
+    Returns: dataframe of forecast observations,
+             cols = ['u', 'v', 't', 'speed', 'dir']
 
     Processing steps:
     - reverse u, v, and t altitudes
     - filter daytime datapoints
     - add "speed" and "dir" columns
     """
-    not_daytime = gfs_df.index.hour != 12
-    gfs_df = gfs_df.iloc[not_daytime].copy()
-    n = len(gfs_df)
+    not_daytime = df.index.hour != 12
+    df = df.iloc[not_daytime].copy()
+    n = len(df)
 
-    # reverse, and disregard the top 5 altitudes
-    for k in ['u', 'v', 't', 'p']:
-        gfs_df[k] = [gfs_df[k].values[i][::-1][:-5] for i in range(n)]
+    # reverse
+    for k in ['u', 'v', 't']:
+        df[k] = [df[k].values[i][::-1] for i in range(n)]
 
-    gfs_df['speed'] = [np.hypot(gfs_df['u'].values[i], gfs_df['v'].values[i])
-                       for i in range(n)]
+    df['speed'] = [np.hypot(df['u'].values[i], df['v'].values[i])
+                   for i in range(n)]
 
-    gfs_df['dir'] = [to_direction(gfs_df['v'].values[i], gfs_df['u'].values[i])
-                     for i in range(n)]
+    df['dir'] = [to_direction(df['v'].values[i], df['u'].values[i])
+                 for i in range(n)]
 
-    # find altitudes of forecasts; all data have same pressures so take first
-    median_t = np.median([gfs_df['t'].values[i] for i in range(n)], axis=0)
-    h_gfs = pressure_to_h(gfs_df['p'].values[0], median_t)
-    return gfs_df, h_gfs
+    if 'p' in df.columns:
+        df.drop('p', axis=1, inplace=True)
 
-
-def pressure_to_h(p, t):
-    """Convert array of pressure and temperature values to altitude."""
-    M = 28.96  # average mol. mass of atmosphere, in g/mol
-    g = 9.8  # accelerationg at the surface
-    R = 8.314  # gas constant, in J/mol/K
-    P0 = 1013  # pressure at sea level, in hPa (=mbar)
-
-    return (R * t) / (M * g) * np.log(P0 / p)
+    return df
 
 
-def match_telemetry(telemetry, gfs_dates):
+def match_telemetry(telemetry, forecast_dates):
     """Return overlap between telemetry and forecasting data.
 
     Parameters
@@ -213,7 +203,7 @@ def match_telemetry(telemetry, gfs_dates):
     telemetry: pandas dict
         Columns: 'speed', 'dir', 't', and index of datetimes of observations.
 
-    gfs_dates: pd Series containing datetime objects of forecasts
+    forecast_dates: pd Series containing datetime objects of forecasts
 
     Returns
     -------
@@ -224,39 +214,39 @@ def match_telemetry(telemetry, gfs_dates):
         subselection of input dates which had a valid overlap.
 
     """
-    n_gfs = len(gfs_dates)
+    n = len(forecast_dates)
 
     speed = telemetry['speed']
     direction = telemetry['dir']
     temp = telemetry['t']
 
-    speed_ids = [speed.index[abs(gfs_dates[i] - speed.index)
-                             < pd.Timedelta('30min')] for i in range(n_gfs)]
+    speed_ids = [speed.index[abs(forecast_dates[i] - speed.index)
+                             < pd.Timedelta('30min')] for i in range(n)]
 
-    dir_ids = [direction.index[abs(gfs_dates[i] - direction.index)
-                               < pd.Timedelta('30min')] for i in range(n_gfs)]
+    dir_ids = [direction.index[abs(forecast_dates[i] - direction.index)
+                               < pd.Timedelta('30min')] for i in range(n)]
 
-    temp_ids = [temp.index[abs(gfs_dates[i] - temp.index)
-                           < pd.Timedelta('30min')] for i in range(n_gfs)]
+    temp_ids = [temp.index[abs(forecast_dates[i] - temp.index)
+                           < pd.Timedelta('30min')] for i in range(n)]
 
-    ids_to_keep = [i for i in range(n_gfs)
+    ids_to_keep = [i for i in range(n)
                    if len(speed_ids[i]) != 0
                    and len(dir_ids[i]) != 0
                    and len(temp_ids[i]) != 0]
 
     matched_s = [np.median(speed.loc[speed_ids[i]])
-                 for i in range(n_gfs) if i in ids_to_keep]
+                 for i in range(n) if i in ids_to_keep]
     matched_d = [np.median(direction.loc[dir_ids[i]])
-                 for i in range(n_gfs) if i in ids_to_keep]
+                 for i in range(n) if i in ids_to_keep]
     matched_t = [np.median(temp.loc[temp_ids[i]])
-                 for i in range(n_gfs) if i in ids_to_keep]
+                 for i in range(n) if i in ids_to_keep]
 
     # calculate velocity componenents from the matched speed/directions
     uv = to_components(np.array(matched_s), np.array(matched_d))
 
     return ({'speed': np.array(matched_s), 'dir': np.array(matched_d),
              't': np.array(matched_t), 'u': uv['u'], 'v': uv['v']},
-            gfs_dates[ids_to_keep])
+            forecast_dates[ids_to_keep])
 
 
 def interpolate(x, y, new_x, ddz=True, s=None):

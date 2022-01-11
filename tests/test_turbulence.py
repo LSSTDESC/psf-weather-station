@@ -1,5 +1,7 @@
+"""Tests of ParameterGenerator() methods involving turbulence parameters."""
 import psfws
 import numpy as np
+
 
 def test_joint_pdf():
     # iterate through some semi-random values of rho
@@ -7,11 +9,12 @@ def test_joint_pdf():
     rho_result = []
     for rho_jv in rho_goal:
         p = psfws.ParameterGenerator(rho_j_wind=rho_jv)
-        rho_result.append(np.corrcoef(p.data_gl['j_gl'], 
+        rho_result.append(np.corrcoef(p.data_gl['j_gl'],
                                       p.data_gl['speed'])[0][1])
     # check whether results are within some tolerance of desired values
     np.testing.assert_allclose(rho_result, rho_goal, rtol=.1, atol=.05,
                                err_msg='correlating marginal pdfs failed.')
+
 
 def test_turbulence_draws():
     # first test with no wind correlation for ground layer
@@ -25,8 +28,13 @@ def test_turbulence_draws():
                             err_msg='error reproducing turbulence integrals')
 
     # second, test with wind correlation for ground layer
-    j_gl_goal = 1.4466640614052723e-13
-    j_fa_goal = 3.3034875838653924e-14
+    if p.src == 'noaa':
+        j_gl_goal = 1.4466640614052723e-13
+        j_fa_goal = 3.3034875838653924e-14
+    elif p.src == 'ecmwf':
+        j_gl_goal = 7.676675326677918e-14
+        j_fa_goal = 6.408088187515762e-13
+        
     p = psfws.ParameterGenerator(rho_j_wind=.7, seed=2012)
     pt = p._rng.choice(p.data_fa.index)
     j_fa_res, j_gl_res = p._draw_j(pt)
@@ -34,9 +42,10 @@ def test_turbulence_draws():
     np.testing.assert_equal([j_fa_res, j_gl_res], [j_fa_goal, j_gl_goal],
                             err_msg='error reproducing turbulence integrals')
 
+
 def test_turbulence_weights():
     # first make sure number of weights == number of layers
-    p = psfws.ParameterGenerator(seed=85647724) 
+    p = psfws.ParameterGenerator(seed=85647724)
     pt = p._rng.choice(p.data_fa.index)
     j, layers = p.get_turbulence_integral(pt)
 
@@ -45,10 +54,10 @@ def test_turbulence_weights():
     #                         err_msg='unequal number of layers and weights')
 
     # test sum FA weights = j integral
-    p = psfws.ParameterGenerator(seed=85647724) 
+    p = psfws.ParameterGenerator(seed=85647724)
     pt = p._rng.choice(p.data_fa.index)
     j_fa, j_gl = p._draw_j(pt)
-    np.testing.assert_allclose([np.sum(j[1:])], [j_fa]) 
+    np.testing.assert_allclose([np.sum(j[1:])], [j_fa])
 
 
 if __name__ == '__main__':
