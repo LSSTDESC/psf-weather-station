@@ -213,7 +213,7 @@ class ParameterGenerator():
         else:
             # interpolate forecasts to bit above GL (by ~weather tower height)
             gl = {}
-            for k in ['u', 'v', 't', 'speed', 'dir']:
+            for k in ['u', 'v', 't', 'speed', 'phi']:
                 gl[k] = np.array([utils.interpolate(h, f, 
                                                     self.h0 + .05, ddz=False) 
                                   for f in forecast.loc[k].values])
@@ -226,7 +226,7 @@ class ParameterGenerator():
         self.h = h[where_h0:where_end]
         self.p = p_and_h[src]['p'][::-1][where_h0:where_end]
 
-        for k in ['u', 'v', 't', 'speed', 'dir']:
+        for k in ['u', 'v', 't', 'speed', 'phi']:
             forecast[k] = [forecast[k].values[i][where_h0:where_end] 
                            for i in range(self.N)]
         self.data_fa = forecast
@@ -262,14 +262,14 @@ class ParameterGenerator():
             if type(pt) == pd.Timestamp:
                 raise KeyError(f'{pt} not found in data index!')
 
-        direction = np.hstack([gl.at['dir'], fa.at['dir']])
+        direction = np.hstack([gl.at['phi'], fa.at['phi']])
 
         return {'u': np.hstack([gl.at['u'], fa.at['u']]),
                 'v': np.hstack([gl.at['v'], fa.at['v']]),
                 'speed': np.hstack([gl.at['speed'], fa.at['speed']]),
                 't': np.hstack([gl.at['t'], fa.at['t']]),
                 'h': np.hstack([self.h0, self.h]),
-                'direction': utils.smooth_direction(direction)}
+                'phi': utils.smooth_direction(direction)}
 
     def _interpolate(self, p_dict, h_out, s=None):
         """Get interpolations & derivatives of params at new heights h_out."""
@@ -301,7 +301,7 @@ class ParameterGenerator():
                                                   self.p,
                                                   h_out * 1000,
                                                   s=s)
-        out['direction'] = utils.smooth_direction(utils.to_direction(out['v'],
+        out['phi'] = utils.smooth_direction(utils.to_direction(out['v'],
                                                                      out['u']))
         out['speed'] = np.hypot(out['u'], out['v'])
         out['h'] = h_out
@@ -395,9 +395,8 @@ class ParameterGenerator():
         params = {}
 
         # stack GL with FA interpolation results for each parameter
-        for kgl, kfa in zip(['u', 'v', 't', 'speed', 'dir'],
-                            ['u', 'v', 't', 'speed', 'direction']):
-            params[kfa] = np.hstack([self.data_gl.at[pt, kgl], fa_params[kfa]])
+        for k in ['u', 'v', 't', 'speed', 'phi']:
+            params[kfa] = np.hstack([self.data_gl.at[pt, k], fa_params[k]])
 
         params['h'] = h_layers
         params['j'] = j

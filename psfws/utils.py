@@ -71,9 +71,8 @@ def process_telemetry(telemetry):
     """Return masked telemetry measurements of speed/direction.
 
     Input and output are both dicts of pandas series of wind speeds/directions/
-    temperatures.
-    Values in output masked for zeros and speeds > 40m/s. Keys in output are
-    'speed', 'dir', and 't'
+    temperatures. Values in output masked for zeros and speeds > 40m/s. Keys in 
+    output are 'speed', 'phi', and 't'
     """
     tel_dir = telemetry['wind_direction']
     tel_speed = telemetry['wind_speed']
@@ -85,7 +84,7 @@ def process_telemetry(telemetry):
     temp_mask = tel_temp.index[tel_temp.apply(lambda x: x != 0)]
 
     # return, converting temperatures to Kelvin from degrees Celsius
-    return {'dir': tel_dir.loc[dir_mask],
+    return {'phi': tel_dir.loc[dir_mask],
             'speed': tel_speed.loc[speed_mask],
             't': tel_temp.loc[temp_mask] + 273.15}
 
@@ -108,12 +107,12 @@ def process_forecast(df):
 
     Input: dataframe of forecast obsevrations, cols = ['u', 'v', 't']
     Returns: dataframe of forecast observations,
-             cols = ['u', 'v', 't', 'speed', 'dir']
+             cols = ['u', 'v', 't', 'speed', 'phi']
 
     Processing steps:
     - reverse u, v, and t altitudes
     - filter daytime datapoints
-    - add "speed" and "dir" columns
+    - add "speed" and "phi" columns
     """
     not_daytime = df.index.hour != 12
     df = df.iloc[not_daytime].copy()
@@ -126,7 +125,7 @@ def process_forecast(df):
     df['speed'] = [np.hypot(df['u'].values[i], df['v'].values[i])
                    for i in range(n)]
 
-    df['dir'] = [to_direction(df['v'].values[i], df['u'].values[i])
+    df['phi'] = [to_direction(df['v'].values[i], df['u'].values[i])
                  for i in range(n)]
 
     if 'p' in df.columns:
@@ -184,7 +183,7 @@ def match_telemetry(telemetry, forecast_dates):
     # calculate velocity componenents from the matched speed/directions
     uv = to_components(np.array(matched_s), np.array(matched_d))
 
-    return ({'speed': np.array(matched_s), 'dir': np.array(matched_d),
+    return ({'speed': np.array(matched_s), 'phi': np.array(matched_d),
              't': np.array(matched_t), 'u': uv['u'], 'v': uv['v']},
             forecast_dates[ids_to_keep])
 
