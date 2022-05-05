@@ -336,85 +336,31 @@ class ParameterGenerator():
 
         return cn2_complete, h_complete
 
-    def get_cn2_all(self):
-        """Get array of free atmosphere Cn2 values for all data available."""
-        cn2_list = []
-        for pt in self.data_fa.index:
-            cn2, h = self.get_fa_cn2(pt)
-            cn2_list.append(cn2)
-        return np.array(cn2_list), h
-
-    def _get_auto_layers(self, pt):
-        """Return layer altitudes according to max wind speed & turbulence."""
-        # make an array of heights for interpolation
-        h_interp = np.linspace(self.h0, max(self.h), 500)
-
-        # interpolate the median speeds from forecast to find height of max
-        all_speeds = [i for i in self.data_fa['speed'].values]
-        h_maxspd = utils.find_max_median(all_speeds, self.h, h_interp, self.h0)
-
-        # interpolate the median cn2 to find height of max
-        # don't change k here because don't care about absolute amplitude
-        cn2, h_cn2 = self.get_cn2_all()
-        h_maxcn2 = utils.find_max_median(cn2, h_cn2, h_interp, self.h0)
-
-        # sort the heights of max speed and max turbulence
-        h3, h4 = np.sort([h_maxspd, h_maxcn2])
-
-        # lowest boundary is start of free atmosphere
-        lowest = self.h[self.fa_start]
-
-        h2 = np.mean([lowest, h3])
-        h5 = np.mean([h4, 18])
-
-        return [h2, h3, h4, h5, 18]
-
-    def _integrate_cn2(self, pt):
-        """Calculate turbulence integral of given Cn2 at given layers.
-
-        Parameters
-        ----------
-        cn2 : array
-            cn2 values
-        h : array
-            heights of cn2 values
-        layers : str or list or array
-            Centers of integration regions set by layers keyword; either
-            list/array of values, or 'auto' for them to be automatically
-            calculated based on wind and turbulence maximums (default: 'auto')
-
-        Returns
-        -------
-        turbulence integral values J, in m^(1/3)
-        integration bin edges, in km
-        integration bin centers (aka layers if not 'auto'), in km
+    def get_turbulence_integral(self, pt, nl, location='mean'):
+        """Get turbulence integral at nl layers for given time.
 
         """
-        maxh = max(self.h)
-        cn2, h = self.get_fa_cn2(pt)
+        if 'mean' in location:
+            h_operation = lambda x, w: np.mean(x)
+        elif 'com' in location:
+            h_operation = lambda x, w: np.average(x, weights=x)
+        else:
+            raise ValueError('Layer location not valid!')
 
-        # define bins, lower boundary is start of FA
-        bin_centers = self._get_auto_layers(pt)
-        edges = [self.h[self.fa_start]] + [np.mean(bin_centers[i:i+2])
-                                           for i in range(len(bin_centers)-1)]\
-                                           + [maxh]
-
-        # integrate cn2 in bins defined by these edges
-        j = utils.integrate_in_bins(cn2, h, edges)
-        # return along with edges and bin centers
-        return j, edges, bin_centers
-
-    def get_turbulence_integral(self, pt):
-        """Return integrated Cn2 profile for datapoint with index pt."""
-        # draw turbulence integral values from PDFs:
+        cn2, h_km = self._get_fa_cn2(pt)
+        # nl - 1 layers in FA
+        b = int(len(h_km) / (nl - 1))
+        fa_edges = [h_km[i * b] for i in range(nl-1)] + [h_km[-1]]
+        fa_layers = [h_operation(h_km[i*b:(i+1)*b], cn2[i*b:(i+1)*b])
+                     for i in range(nl - 1)]
+        fa_j_uncal = utils.integrate_in_bins(cn2, h_km, np.array(fa_edges))
+        
+        # draw Gl and FA total turbulence integral values from PDFs:
         j_fa, j_gl = self._draw_j(pt=pt)
 
-        fa_ws, _, fa_layers = self._integrate_cn2(pt)
         # total FA value scales the FA weights from integrated Osborn model
-        fa_ws = [w * j_fa / np.sum(fa_ws) for w in fa_ws]
+        fa_j_cal = [w * j_fa / np.sum(fa_j_uncal) for w in fa_j_uncal]
         
-        # return integrated turbulence
-        return np.array([j_gl] + fa_ws), np.array([self.h0] + fa_layers)
 
     def get_parameters(self, pt, s=None):
         """Get parameters for dataset pt at automatically generated altitudes.
@@ -443,8 +389,9 @@ class ParameterGenerator():
             if type(pt) == pd.Timestamp:
                 raise KeyError(f'{pt} not found in data index!')
 
-        j, h_layers = self.get_turbulence_integral(pt)
-        fa_params = self._interpolate(fa, h_layers[1:], s)
+        j, h_layers, h_edges = self.get_turbulence_integral(pt=pt, nl=nl,
+                                                            location=location)
+        fa_params = self._interpolate(fa, h_layers[1:], s=s)
         params = {}
 
         # stack GL with FA interpolation results for each parameter
@@ -459,5 +406,5 @@ class ParameterGenerator():
     def draw_parameters(self, layers='auto', s=None):
         """Draw a random datapoint from the dataset and return parameters."""
         pt = self._rng.choice(self.data_fa.index)
-        return self.get_parameters(pt, s)
+        return self.get_parameters(pt=pt, nl=nl, s=s, location=location)
 

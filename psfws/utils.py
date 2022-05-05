@@ -189,7 +189,7 @@ def match_telemetry(telemetry, forecast_dates):
             forecast_dates[ids_to_keep])
 
 
-def interpolate(x, y, new_x, ddz=True, s=None):
+def interpolate(x, y, new_x, ddz=True, s=0):
     """Interpolate 1D array y at values x to new_x values.
 
     Parameters
@@ -212,16 +212,6 @@ def interpolate(x, y, new_x, ddz=True, s=None):
         dydz, derivative of new_y at positions new_x, if ddz=True
 
     """
-    # if you want to use points above/below data to improve edge interpolation:
-    # make a spline and fix constant first derivative at the boundary
-    # spline = make_interp_spline(x, y, bc_type='natural')
-    # # get the spline extrapolation above/below data region (ok bc f'=const)
-    # delta_x = x[1]-x[0]
-    # x_below = np.linspace(x[0]-2*delta_x, x[0], 20)
-    # x_above = np.linspace(x[-1], x[-1]+2*delta_x, 20)
-    # y = np.concatenate([spline(x_below), y, spline(x_above)])
-    # x = np.concatenate([x_below, x, x_above])
-
     # this is a smoothing spline unless s=0
     f_y = UnivariateSpline(x, y, s=s)
 
