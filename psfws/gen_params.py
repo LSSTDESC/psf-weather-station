@@ -17,127 +17,75 @@ class ParameterGenerator():
     Optionally, local wind measurements from the site of interest may be used
     to improve the accuracy of the outputs. The package contains these data
     for Cerro Pachon, and all defaults are set up to match this location.
-    Use of the code to generate parameters for Cerro Pachon (and nearby Cerro 
+    Use of the code to generate parameters for Cerro Pachon (and Cerro 
     Telolo, nearby) is straightforward, but for use at other observatories,
     users must supply input data: instructions for downloading and formatting 
     forecasting data/telemetry are in the README.
 
-    Attributes
-    ----------
-    data_fa : pandas dataframe
-        Above ground forecasting data, with DateTimes as index and columns 'u',
-        'v', 'speed', 'dir', 't', and 'p'. Each entry is a ndarray of values
-        for each altitude, with speed/velocity components in m/s, directions in
-        degrees, temperatures in Kelvin, and pressures in mbar. The u/v
-        components of velocity correspond to north/south winds, respectively,
-        and the wind direction is given as degrees west of north.
-        To select data in the free atmosphere use the gl_end parameter, for
-        example: data_fa.at[pt,'v'][fa_start:]
-    data_gl : pandas dataframe
-        Ground layer data, with DateTimes as index and columns 'speed','dir',
-        'u', 'v', 't', and optionally 'j_gl' (see rho_jv below). These values
-        are temporally matched to data_fa, so have identical indicies.
-        The data are either telemetry, if a data file was given, or forecast
-        data interpolated to ground altitude.
-    h : ndarray
-        Altitudes of free atmopshere forecasting data, in km.
-    h0 : float
-        Altitude of observatory, in km.
-    fa_start : int
-        Index of h corresponding to the start of the free atmosphere ~1km above 
-        ground, to use when selecting for free atmosphere parameters.
-    j_pdf : dict
-        Dictionary containing parameters for lognormal PDFs of turbulence
-        integrals for both the ground layer and the free atmosphere values.
-        Keys are 'gl' and 'fa' respecitvely.
-    rho_jv : float or None (default)
-        Correlation coefficient between the ground layer wind speed and ground
-        turbulence integral. If None, no correlation is included.
-    N : int
-        Number of matched datasets.
+    Parameters:
+        seed:           Random seed to initialize rng [default: None]
+        h_tel:          Altitude, in km, of the observatory. [default: 2.715]
+        rho_jv:         Desired correlation coefficient between the ground wind
+                        speed and the ground turbulence integral. If a nonzero
+                        float value is specified, the joint PDF of wind values
+                        and ground turbulence is generated and the turbulence
+                        samples are stored in the ``data_gl`` attribute as the
+                        ``j_gl`` column. [default: 0]
+        turbulence:     Dictionary of lognormal PDF parameters (``s`` and 
+                        ``scale``) describing the statistics of turbulence in 
+                        the ground layer (``gl``) and free atmosphere (``fa``). 
+                        [Default: {'gl': {'s': 0.62, 'scale': 2.34},
+                                   'fa': {'s': 0.84, 'scale': 1.51}]
+                        Turbulence PDF parameters from 
+                        https://doi.org/10.1111/j.1365-2966.2005.09813.x]
+        forecast_file:  Path to weather forecast data. [default:
+                        'data/gfs_-30.0_289.5_20190501-20191101.pkl']
+        telemetry_file: Path to telemetry data. If None, forecast data
+                        will be used for ground level information. [default:
+                        'data/tel_dict_CP_20190501-20191101.pkl'] 
 
 
-    Methods
-    -------
-    get_raw_measurements(pt)
-        Get a matched set of measurements from datapoint with index pt.
+    Attributes:
+        h0:             Altitude of observatory. Measured in km with respect to 
+                        sea level.
+        h:              Ndarray of forecasting data altitudes above ``h0``. 
+                        Measured in km with respect to sea level. 
+        p:              Ndarray of forecast pressures (mbar).
+        data_fa:        Pandas dataframe of forecasting data, with columns 
+                        [``u``, ``v``, ``speed``, ``phi``, ``t``]. Each entry is
+                        a ndarray of the same length as ``h`` and the index of
+                        the dataframe are DateTime objects, i.e. one df entry
+                        corresponds to simultaneous outputs at all altitudes.
+                        Velocity (``u``,``v`` are the east/northward components)
+                        and speed are given in m/s, temperature in Kelvin, and 
+                        ``phi``, using the meteorological convention of the 
+                        direction of wind origin, in degrees east of north.
+        data_gl:        Pandas dataframe of ground level data, either telemetry
+                        (if a data file was given) temporally matched to 
+                        ``data_fa``, or forecast data interpolated to ground 
+                        altitude. Index and columns are the same as ``data_fa``,
+                        unless ``rho_jv`` was specified, in which case a column
+                        ``j_gl`` is added with ground turbulence samples.
+        rho_jv:         Correlation coefficient between the ground level wind 
+                        speed and ground turbulence integral.
+        fa_start:       Integer index of ``h`` corresponding to the start of the
+                        free atmosphere (800m above ground). For example, to 
+                        access ``u`` values in the FA for some Index ``pt``: 
+                        ``data_fa.at[pt, 'u'][fa_start:]``
+        j_pdf:          Dictionary containing parameters for lognormal PDFs of 
+                        empirical turbulence integral distributions for the 
+                        ground layer (``gl``) and free atmosphere (``fa``).
+        N:              Number of matched datasets.
 
-    get_param_interpolation(pt, h_out, s=None)
-        Get set of parameters from datapoint with index pt, interpolated
-        to new altitudes h_out. Smoothness of cubic interpolation can be
-        specified with keyword s: None for scipy optimized value, 0 for no 
-        smoothing.
-
-    get_fa_cn2(pt)
-        Get free atmosphere Cn2 profile for requested datapoint.
-
-    get_turbulence_integral(pt, layers='auto')
-        Get set of turbulence integrals associated for requested datapoint pt.
-        Centers of integration regions set by layers keyword; either array of
-        values, or 'auto' for them to be automatically calculated based on wind
-        and turbulence maximums.
-
-    get_cn2_all()
-        Get free atmosphere Cn2 profiles for entire dataset, returned as array.
-
-    draw_parameters(layers='auto')
-        Randomly draw a set of parameters: wind speed, wind direction,
-        turbulence integrals. These are returned in a dict along with layer
-        heights.
-        Output altitudes are set by layers keyword; either array of values, or
-        'auto' for them to be automatically calculated based on wind and
-        turbulence maximums.
-
-    Notes
-    -----
-    Code is written to output quantities formatted to match desired inputs for
-    GalSim atompsheric PSF simulations.
+    Notes:
+        Code is written to output quantities formatted to match desired inputs
+        for GalSim atompsheric PSF simulations.
 
     """
 
     def __init__(self, seed=None, h_tel=2.715, rho_jv=None,
                  turbulence={'gl':{'s':0.62,'scale':2.34},'fa':{'s':0.84,'scale':1.51}},
                  forecast_file='data/ecmwf_-30.25_-70.75_20190501_20191031.p',
-                 telemetry_file='data/tel_dict_CP_20190501-20191101.pkl',
-                 rho_j_wind=None):
-        """Initialize generator and process input data.
-
-        Parameters
-        ----------
-        location : str
-            The name of desired mountaintop (default is 'cerro-pachon').
-            Valid options: 'cerro-paranal', 'cerro-pachon', 'cerro-telolo',
-            'mauna-kea', and 'la-palma'.
-            To customize to another observatory, input instead a dict with keys
-            'altitude' (value in km) and 'turbulence_params', itself a nested
-            dict of lognormal PDF parameters 's' (sigma) and 'scale' (exp(mu))
-            for ground layer and free atmosphere, e.g. {'gl':{'s':, 'scale':}}.
-
-        seed : int
-            Seed to initialize random number generator (default is None)
-
-        telemetry_file : str or None
-            Path to file of telemetry data (default is
-            'data/tel_dict_CP_20190501-20191101.pkl'). If None, forecast data
-            will be used for ground layer information.
-
-        forecast_file : str
-            Path to file of weather forecast data (default is
-            'data/gfs_-30.0_289.5_20190501-20191101.pkl').
-
-        date_range : list
-            List of two strings representing dates, e.g. '2019-05-01'.
-            Data date range to use. Allows user to select subset of telemetry
-            (default: ['2019-05-01', '2019-10-31'])
-
-        rho_j_wind : float (default is None)
-            Desired correlation coefficient between ground wind speed and
-            turbulence integral. If None, no correlation is included. If a
-            float value is specified, the joint PDF of wind values and ground
-            turbulence is generated and the turbulence values are stored in
-            data_gl as the 'j_gl' column.
-
-        """
                  telemetry_file='data/tel_dict_CP_20190501-20191101.pkl'):
         # set up the paths to data files, and check they exist.
         psfws_base = pathlib.Path(__file__).parents[0].absolute()
@@ -235,23 +183,16 @@ class ParameterGenerator():
         self.fa_start = np.where(self.h > self.h0 + .8)[0][0]   
         
     def get_measurements(self, pt):
-        """Get a matched set of measurements from datapoint with index pt.
+        """Get a matched set of measurements from datapoint with index ``pt``.
 
-        Parameters
-        ----------
-        pt : int
-            pandas Timestamp of date/time of output datapoint desired
+        Parameters:
+            pt:     Pandas Timestamp of date/time for desired output.
 
-        Returns
-        -------
-        dict of wind and temperature measurements, made of paired telemetry and
-        forecast data for integer index pt.
-        Keys are 'u' and 'v' for arrays of velocity components, and 'speed' and
-        'direction', 'temp' for temperatures, and 'h' gives array of altitudes
-        for all measurements.
-        The u/v components of velocity correspond to north/south winds,
-        respectively, and the wind direction is given as degrees west of north.
-
+        Returns:
+            params: Dictionary of wind and temperature measurements, made of
+                    matched ground level and free atmosphere data, at Index 
+                    location ``pt``. Keys are [``u``, ``v``, ``speed``, ``phi``,
+                    ``t``, ``h``] (see class Attributes for details).
         """
         try:
             gl = self.data_gl.loc[pt]
@@ -272,7 +213,7 @@ class ParameterGenerator():
                 'phi': utils.smooth_direction(direction)}
 
     def _interpolate(self, p_dict, h_out, s=None):
-        """Get interpolations & derivatives of params at new heights h_out."""
+        """Get interpolations & derivatives of p_dict at new heights h_out."""
         # check h_out values
         if max(h_out) > 100:
             # 100km would be an outrageously high altitude, probably unit error
@@ -339,6 +280,17 @@ class ParameterGenerator():
     def get_turbulence_integral(self, pt, nl, location='mean'):
         """Get turbulence integral at nl layers for given time.
 
+        Parameters:
+            pt:         Pandas Timestamp of date/time for desired output.
+            nl:         Number of output layers desired.
+            location:   Method for setting centroid of layer, must be one of
+                        [``mean``, ``com``]. [default: ``mean``]
+
+        Returns:
+            j_layers:   Turbulence integrals J, in m^(1/3), for each layer.
+            h_layers:   Altitude centroid for each layer, in km.
+            h_edges:    Layer boundaries, the integration region corresponding
+                        to each ``j``.
         """
         if 'mean' in location:
             h_operation = lambda x, w: np.mean(x)
@@ -362,23 +314,24 @@ class ParameterGenerator():
         fa_j_cal = [w * j_fa / np.sum(fa_j_uncal) for w in fa_j_uncal]
         
 
-    def get_parameters(self, pt, s=None):
-        """Get parameters for dataset pt at automatically generated altitudes.
+    def get_parameters(self, pt, nl=8, s=0, location='mean'):
+        """Get parameters from dataset ``pt`` for a set of atmospheric layers.
+        
+        Returns a dictionary of wind and turbulence parameter dict for ``nl``
+        layers, located at altitudes``h`` and with boundaries ``edges``. Each
+        atmospheric layer has a turbulence weight ``j`` and wind parameters
+        given by east/northward components ``u`` and ``v``, or equivalently by
+        ``speed`` and ``phi``, the direction of wind origin measured in degrees
+        east of north.
 
-        Parameters
-        ==========
-        pt : pd.Timestamp
-            timestamp corresponding to dataset of interest. Must be within the
-            index of self.data_* 
-
-        Returns
-        =======
-        parameters : dict
-            Keys are 'j' for turbulence integrals, 'u', 'v', 'speed',
-            'direction' for wind parameters, and 'h' for altitudes.
-            Turbulence integrals have dimension m^[1/3], u/v components of 
-            velocity correspond to north/east winds, respectively, and the 
-            wind direction is given as degrees west of north.
+        Parameters:
+            pt:         Pandas Timestamp of date/time for desired output.
+            nl:         Number of output layers desired. [default: 8]
+            s:          Smoothing factor for scipy interpolate. Use 0 for 
+                        perfect interpolation, or None for scipy's' best 
+                        estimate. [default: 0]
+            location:   Method for setting centroid of layer, must be one of
+                        (``mean``, ``com``). [default: ``mean``]
 
         """
         try:
@@ -402,8 +355,12 @@ class ParameterGenerator():
         params['j'] = j
         return params
 
-    def draw_parameters(self, layers='auto', s=None):
-        """Draw a random datapoint from the dataset and return parameters."""
+    def draw_parameters(self, nl=8, s=0, location='mean'):
+        """Draw a random datapoint from the dataset, and return parameters.
+
+        Output is the same as ``get_parameters``.
+
+        """
         pt = self._rng.choice(self.data_fa.index)
         return self.get_parameters(pt=pt, nl=nl, s=s, location=location)
 
