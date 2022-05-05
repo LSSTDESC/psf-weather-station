@@ -67,66 +67,6 @@ def correlate_marginals(X, y, rho, rng):
     return X
 
 
-def initialize_location(loc):
-    """
-    Fetch ground altitude and turbulence PDF parameters for observatory.
-
-    Parameters
-    ----------
-    loc : str or dict
-        Valid str options: 'cerro-paranal', 'cerro-pachon', 'cerro-telolo',
-        'mauna-kea', and 'la-palma'.
-        To customize to another observatory, input instead a dict with keys
-        'altitude' (value in km) and 'turbulence_params' (see j dict below)
-
-    Returns
-    -------
-    h: float, local ground altitude
-    j: dict
-        PDF parameters for ground layer ('gl') and free atmosphere ('fa').
-        Parameters s (sigma) and scale (exp(mu)) for log normal distributions.
-    """
-    # custom usage
-    if type(loc) == dict:
-        h0 = loc['altitude']
-        j_params = loc['turbulence_params']
-
-    elif type(loc) == str:
-        ground_altitude = {'cerro-pachon': 2.715,
-                           'mauna-kea': 4.2,
-                           'cerro-telolo': 2.2,
-                           'la-palma': 2.4,
-                           'cerro-paranal': 2.64}
-        j_params = {'cerro-pachon': {'gl': {'s': 0.62, 'scale': 2.34},
-                                     'fa': {'s': 0.84, 'scale': 1.51}}}
-
-    else:
-        return TypeError('loc arg must be either dict or string!')
-
-    # initialize lognorm pdfs for ground and FA turbulence:
-    j_pdf = {k: lognorm(v['s'], v['scale']) for k, v in j_params[loc].items()}
-
-    try:
-        return ground_altitude[loc], j_pdf
-    except KeyError:
-        print('loc must be one of allowed locations! See docstring.')
-
-
-def find_max_median(x, h_old, h_new, h0):
-    """Find max of median of array x by interpolating datapoints."""
-    # interpolate median x to smoothly spaced new h values
-    if len(np.array(x).shape) >= 2:
-        x = np.median(x, axis=0)
-
-    x_interp = interpolate(h_old, x, h_new, ddz=False)
-
-    # find maximum of interpolated x *above 2km*, to avoid ground effects
-    max_index = np.argmax(x_interp[h_new > 2 + h0])
-    h_max = h_new[h_new > 2 + h0][max_index]
-
-    return h_max
-
-
 def process_telemetry(telemetry):
     """Return masked telemetry measurements of speed/direction.
 

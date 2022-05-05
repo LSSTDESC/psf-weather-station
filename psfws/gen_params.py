@@ -95,8 +95,8 @@ class ParameterGenerator():
 
     """
 
-    def __init__(self, location='cerro-pachon', seed=None,
-                 date_range=['2019-05-01', '2019-10-31'],
+    def __init__(self, seed=None, h_tel=2.715, rho_jv=None,
+                 turbulence={'gl':{'s':0.62,'scale':2.34},'fa':{'s':0.84,'scale':1.51}},
                  forecast_file='data/ecmwf_-30.25_-70.75_20190501_20191031.p',
                  telemetry_file='data/tel_dict_CP_20190501-20191101.pkl',
                  rho_j_wind=None):
@@ -138,6 +138,7 @@ class ParameterGenerator():
             data_gl as the 'j_gl' column.
 
         """
+                 telemetry_file='data/tel_dict_CP_20190501-20191101.pkl'):
         # set up the paths to data files, and check they exist.
         psfws_base = pathlib.Path(__file__).parents[0].absolute()
 
@@ -148,26 +149,28 @@ class ParameterGenerator():
         if telemetry_file is not None:
             self._paths['telemetry'] = pathlib.Path.joinpath(psfws_base, 
                                                              telemetry_file)
+            use_telemetry = True
+        else:
+            use_telemetry = False
              
         for file_path in self._paths.values():
             if not file_path.is_file():
                 print(f'code running from: {psfws_base}')
                 raise FileNotFoundError(f'file {file_path} not found!')
 
-        # set up random number generator with seed, if given
+        # set ground altitude, turbulence pdf, and j/wind correlation
+        self.h0 = h_tel 
+        self.j_pdf = {k: utils.lognorm(v['s'], v['scale']) for k, v in turbulence.items()}
+        self.rho_jv = rho_jv
+
         self._rng = np.random.default_rng(seed)
 
-        # set ground + telescope height, turbulence pdf (location specific)
-        self.h0, self.j_pdf = utils.initialize_location(location)
-        # TO DO: put this rho in the location specific utils?
-        self.rho_jv = rho_j_wind
-
         # load and match forecast/telemetry data
-        self._load_data(date_range)
+        self._load_data(use_telemetry)
 
         # if using correlation between wind speed and ground turbulence,
         # draw values in advance and perform correlation of marginals
-        if self.rho_jv is not None:
+        if self.rho_jv is not 0:
             # draw JGL values
             j_gl = self.j_pdf['gl'].rvs(size=self.N, random_state=self._rng)
             # correlate and store modified dataframe
@@ -176,21 +179,21 @@ class ParameterGenerator():
                                                      self.rho_jv,
                                                      self._rng)
 
-    def _load_data(self, use_telemetry=True, dr=['2019-05-01', '2019-10-31']):
+    def _load_data(self, use_telemetry=True):
         """Load data from forecast, telemetry files, match, and store."""
         forecast = pickle.load(open(self._paths['forecast_data'], 'rb'))
         forecast = utils.process_forecast(forecast)
 
-        try:# first, find forecast dates within the date range desired
-            forecast_dates = forecast[dr[0]:dr[1]].index
+        try: # first, find forecast dates within the date range desired
+            forecast_dates = forecast.index
         except KeyError:
             print("Requested dates are not within range of available data!")
 
         # load heights and pressures
         p_and_h = pickle.load(open(self._paths['p_and_h'], 'rb'))
-        self.src = 'ecmwf' if len(forecast['u'].iat[0]) > 50 else 'noaa' 
+        src = 'ecmwf' if len(forecast['u'].iat[0]) > 50 else 'noaa'
         # reverse to match forecast data order, convert to m
-        h = np.array([h/1000 for h in p_and_h[self.src]['h'][::-1]])
+        h = np.array([h/1000 for h in p_and_h[src]['h'][::-1]])
 
         # find lower gl cutoff:
         where_h0 = np.where(h > self.h0)[0][0]
@@ -203,12 +206,11 @@ class ParameterGenerator():
 
             # this function returns dict of telemetry medians within
             # 30 mins of each forecast datapoint and datetimes of these
-            tel_m, dates_m = utils.match_telemetry(telemetry, forecast_dates)
+            tel_m, dates_m = utils.match_telemetry(telemetry, forecast.index)
             self.data_gl = pd.DataFrame(data=tel_m, index=dates_m)
             # only keep forecasts with matching telemetry dates
             forecast = forecast.loc[dates_m]
         else:
-            forecast = forecast.loc[forecast_dates]
             # interpolate forecasts to bit above GL (by ~weather tower height)
             gl = {}
             for k in ['u', 'v', 't', 'speed', 'dir']:
@@ -222,7 +224,7 @@ class ParameterGenerator():
 
         # save all forecast data only between ground and upper bound
         self.h = h[where_h0:where_end]
-        self.p = p_and_h[self.src]['p'][::-1][where_h0:where_end]
+        self.p = p_and_h[src]['p'][::-1][where_h0:where_end]
 
         for k in ['u', 'v', 't', 'speed', 'dir']:
             forecast[k] = [forecast[k].values[i][where_h0:where_end] 
@@ -317,7 +319,7 @@ class ParameterGenerator():
             return (self.j_pdf['fa'].rvs(random_state=self._rng) * a,
                     self.data_gl.at[pt, 'j_gl'] * a)
 
-    def get_fa_cn2(self, pt):
+    def _get_fa_cn2(self, pt):
         """Get free atmosphere Cn2 and h arrays for datapoint with index pt.
 
         Empirical model for Cn2 from Osborn et al 2018:
