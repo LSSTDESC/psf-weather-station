@@ -83,7 +83,7 @@ class ParameterGenerator():
 
     """
 
-    def __init__(self, seed=None, h_tel=2.715, rho_jv=None,
+    def __init__(self, seed=None, h_tel=2.715, rho_jv=0,
                  turbulence={'gl':{'s':0.62,'scale':2.34},'fa':{'s':0.84,'scale':1.51}},
                  forecast_file='data/ecmwf_-30.25_-70.75_20190501_20191031.p',
                  telemetry_file='data/tel_dict_CP_20190501-20191101.pkl'):
@@ -252,7 +252,7 @@ class ParameterGenerator():
     def _draw_j(self, pt=None):
         """Draw values for ground and free atmosphere turbulence."""
         a = 10**(-13)  # because PDFs are in units of 10^-13 m^1/3!
-        if self.rho_jv is None:
+        if self.rho_jv == 0:
             return (self.j_pdf['fa'].rvs(random_state=self._rng) * a,
                     self.j_pdf['gl'].rvs(random_state=self._rng) * a)
         else:
@@ -295,7 +295,7 @@ class ParameterGenerator():
         if 'mean' in location:
             h_operation = lambda x, w: np.mean(x)
         elif 'com' in location:
-            h_operation = lambda x, w: np.average(x, weights=x)
+            h_operation = lambda x, w: np.average(x, weights=w)
         else:
             raise ValueError('Layer location not valid!')
 
@@ -313,6 +313,10 @@ class ParameterGenerator():
         # total FA value scales the FA weights from integrated Osborn model
         fa_j_cal = [w * j_fa / np.sum(fa_j_uncal) for w in fa_j_uncal]
         
+        # return integrated turbulence and layer information
+        return (np.array([j_gl] + fa_j_cal),
+                np.array([self.h0] + fa_layers),
+                np.array([self.h0] + fa_edges))
 
     def get_parameters(self, pt, nl=8, s=0, location='mean'):
         """Get parameters from dataset ``pt`` for a set of atmospheric layers.
@@ -349,7 +353,7 @@ class ParameterGenerator():
 
         # stack GL with FA interpolation results for each parameter
         for k in ['u', 'v', 't', 'speed', 'phi']:
-            params[kfa] = np.hstack([self.data_gl.at[pt, k], fa_params[k]])
+            params[k] = np.hstack([self.data_gl.at[pt, k], fa_params[k]])
 
         params['h'] = h_layers
         params['j'] = j
