@@ -8,7 +8,7 @@ def test_joint_pdf():
     rho_goal = [0.2, 0.45, 0.62, 0.83]
     rho_result = []
     for rho_jv in rho_goal:
-        p = psfws.ParameterGenerator(rho_j_wind=rho_jv, seed=23459)
+        p = psfws.ParameterGenerator(rho_jv=rho_jv, seed=23459)
         rho_result.append(np.corrcoef(p.data_gl['j_gl'],
                                       p.data_gl['speed'])[0][1])
     # check whether results are within some tolerance of desired values
@@ -20,8 +20,7 @@ def test_turbulence_draws():
     # first test with no wind correlation for ground layer
     j_gl_goal = 3.880497137403186e-13
     j_fa_goal = 1.936532096294314e-13
-    p = psfws.ParameterGenerator(location='cerro-pachon',
-                                 rho_j_wind=None, seed=460)
+    p = psfws.ParameterGenerator(rho_jv=0, seed=460)
     j_fa_res, j_gl_res = p._draw_j()
 
     np.testing.assert_equal([j_fa_res, j_gl_res], [j_fa_goal, j_gl_goal],
@@ -35,7 +34,7 @@ def test_turbulence_draws():
         j_gl_goal = 7.676675326677918e-14
         j_fa_goal = 6.408088187515762e-13
         
-    p = psfws.ParameterGenerator(rho_j_wind=.7, seed=2012)
+    p = psfws.ParameterGenerator(rho_jv=.7, seed=2012)
     pt = p._rng.choice(p.data_fa.index)
     j_fa_res, j_gl_res = p._draw_j(pt)
 
