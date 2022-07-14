@@ -8,7 +8,7 @@ def test_joint_pdf():
     rho_goal = [0.2, 0.45, 0.62, 0.83]
     rho_result = []
     for rho_jv in rho_goal:
-        p = psfws.ParameterGenerator(rho_j_wind=rho_jv)
+        p = psfws.ParameterGenerator(rho_j_wind=rho_jv, seed=23459)
         rho_result.append(np.corrcoef(p.data_gl['j_gl'],
                                       p.data_gl['speed'])[0][1])
     # check whether results are within some tolerance of desired values
@@ -43,24 +43,70 @@ def test_turbulence_draws():
                             err_msg='error reproducing turbulence integrals')
 
 
-def test_turbulence_weights():
-    # first make sure number of weights == number of layers
-    p = psfws.ParameterGenerator(seed=85647724)
-    pt = p._rng.choice(p.data_fa.index)
-    j, layers = p.get_turbulence_integral(pt)
+def test_turbulence_integration():
+    # test integration of fake Cn2 that I can integrate numerically
+    x0, x1 = 3, 20
+    m, b = 1e-19, 2e-17
+    # x/h are in km, cn2 needs meters.
+    def cn2(h):
+        return (h * 1000) * m + b
+    def cn2_int(x0, x1):
+        return 0.5 * m * 1e6 * (x1**2 - x0**2) + b * 1000 * (x1 - x0)
+    h_km = np.linspace(x0, x1, 500)
+    cn2_m = cn2(h_km)
 
-    # come back to this test after adding new layer method!
-    # np.testing.assert_equal([len(j)],[len(layers)],
-    #                         err_msg='unequal number of layers and weights')
+    j_analytic = cn2_int(x0, x1)
+    j_utils = psfws.utils.integrate_in_bins(cn2_m, h_km, [h_km[0], h_km[-1]])
+    np.testing.assert_allclose(j_analytic, j_utils, atol=1e-10, rtol=1e-3,
+                               err_msg='error integration cn2')
 
     # test sum FA weights = j integral
-    p = psfws.ParameterGenerator(seed=85647724)
+    p = psfws.ParameterGenerator(seed=25493867)
+    pt = p._rng.choice(p.data_fa.index)
+    j, layers, edges = p.get_turbulence_integral(pt, nl=8, location='mean')
+    # need to reset rng to compare
+    p = psfws.ParameterGenerator(seed=25493867)
     pt = p._rng.choice(p.data_fa.index)
     j_fa, j_gl = p._draw_j(pt)
-    np.testing.assert_allclose([np.sum(j[1:])], [j_fa])
+    np.testing.assert_allclose([j_fa, j_gl], [np.sum(j[1:]), j[0]], atol=1e-17,
+                               err_msg='error with turbulence weighting')
+    
+
+def test_turbulence_altitudes():
+    # first make sure number of weights == number of layers == len(edges)-1
+    p = psfws.ParameterGenerator(seed=85647724)
+    pt = p._rng.choice(p.data_fa.index)
+    nlayers = 12
+    mj, mlayers, medges = p.get_turbulence_integral(pt, nl=nlayers, location='mean')
+    np.testing.assert_equal([len(mj), len(mj)], [len(mlayers), len(medges) - 1],
+                            err_msg='error in number of turbulence layer/edges')
+
+    # test com vs mean -- edges should remain the same
+    cj, clayers, cedges = p.get_turbulence_integral(pt, nl=nlayers, location='com')
+    np.testing.assert_equal(medges, cedges, 
+                            err_msg='error with center of mass parameters')
+    
+    # layer locations should change!
+    cn2, h = p._get_fa_cn2(pt)
+    l = 2
+    # not exactly the same way of calculating than package, so tolerances high
+    h_l = h[(h>medges[l]) & (h<medges[l+1])]
+    cn2_l = cn2[(h > medges[l]) & (h < medges[l+1])]
+    np.testing.assert_allclose([mlayers[l], clayers[l]],
+                               [np.mean(h_l), np.sum(h_l * cn2_l) / np.sum(cn2_l)],
+                               atol=0.1, rtol=5e-2,
+                               err_msg='error with layer location calculation')
+
+    # test altitudes of edges: lowest should be at ground
+    np.testing.assert_equal([medges[0]], [p.h0], err_msg='error with GL altitude')
+    # 500m <= second edge <= 1km *above ground*
+    np.testing.assert_array_less([p.h0 + 0.499, medges[1]],
+                                 [medges[1], p.h0 + 1.01], 
+                                 err_msg='error in altitude of layer edges')
 
 
 if __name__ == '__main__':
     test_joint_pdf()
     test_turbulence_draws()
-    test_turbulence_weights()
+    test_turbulence_integration()
+    test_turbulence_altitudes()

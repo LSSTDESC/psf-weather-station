@@ -28,11 +28,11 @@ def test_init():
 
     # do the dataframes contain the correct column names? 
     np.testing.assert_equal(set(p.data_gl.columns),
-                            set(['u', 'v', 't', 'speed', 'dir']),
+                            set(['u', 'v', 't', 'speed', 'phi']),
                             err_msg='Error in GL data columns!')
 
     np.testing.assert_equal(set(p.data_fa.columns),
-                            set(['u', 'v', 't', 'speed', 'dir']),
+                            set(['u', 'v', 't', 'speed', 'phi']),
                             err_msg='Error in FA data columns!')
 
     # do the FA parameter and height arrays have the same length?
@@ -67,7 +67,7 @@ def test_params():
     
     # test get_raw_measurements()
     m_dict = p.get_measurements(pt)
-    m_names = ['u', 'v', 'speed', 't', 'h', 'direction']
+    m_names = ['u', 'v', 'speed', 't', 'h', 'phi']
     dict_test_helper(m_dict, m_names, 'h')
 
     # check error catching in get_raw_measurements()
@@ -80,7 +80,7 @@ def test_params():
 
     # test get_parameters()
     p_dict = p.get_parameters(pt)
-    p_names = ['h', 'u', 'v', 'speed', 't', 'direction', 'j']
+    p_names = ['h', 'u', 'v', 'speed', 't', 'phi', 'j']
     dict_test_helper(p_dict, p_names, 'h')
 
     
@@ -117,7 +117,49 @@ def test_interp():
                                err_msg='Error in interpolation derivative!')
 
 
+def test_coords():
+    """Unit tests to check changing to GalSim coordinates."""
+    # edge case: when at zenith, components for sky and earth are equal.
+    params = {'u':[1], 'v':[1], 'h':[2.1], 'edges': [1,3], 'j':[1e-13]}
+    p_sky = psfws.utils.convert_to_galsim(params, 90, 90)
+    v_sky = np.array([p_sky['v'][0], p_sky['u'][0], 0.])
+    np.testing.assert_allclose(v_sky, np.array([1.,1.,0.]))
+    
+    # check magnitude of vector (in 3d) is still correct after trivial rotation
+    # (otherwise magnitude will change bc of vertical comp)
+    params = {'u':[-10], 'v':[5], 'h':[2.1], 'edges': [1,3], 'j':[1e-13]}
+    p_sky = psfws.utils.convert_to_galsim(params, 90, 90)
+    v_sky = np.array([p_sky['v'][0], p_sky['u'][0], 0.])
+    np.testing.assert_allclose(np.linalg.norm(v_sky), np.linalg.norm([-10, 5, 0.]))
+    
+    # check magnitude of vector in sky-NE plane is smaller after rotation
+    params = {'u':[-10], 'v':[5], 'h':[2.1], 'edges': [1,3], 'j':[1e-13]}
+    p_sky = psfws.utils.convert_to_galsim(params, 70, 70)
+    v_sky = np.array([p_sky['v'][0], p_sky['u'][0], 0.])
+    np.testing.assert_array_less(np.linalg.norm(v_sky), np.linalg.norm([-10, 5, 0.]))
+
+
+def test_zenith():
+    """Unit tests to check zenith dependence of line-of-sight and r0."""
+    # altitude and seeing vs zenith?
+    # check by varying zenith, d_los and j vary as expected, ie ~ sec(zenith)
+    d_los, j = [], []
+    for az in [90,80,70,60]:
+        params = {'u':[-10], 'v':[5], 'h':[2.1], 'edges': [1,3], 'j':[1e-13]}
+        p_sky = psfws.utils.convert_to_galsim(params, 60, az)
+        d_los.append(p_sky['h'][0])
+        j.append(p_sky['j'][0])
+
+    # values of sec(zenith) for zenith = 90-az
+    sec_vals = np.array([1, 1.01542661, 1.06417777, 1.15470054])
+    
+    np.testing.assert_allclose(np.array(d_los), 2.1 * sec_vals)
+    np.testing.assert_allclose(np.array(j), 1e-13 * sec_vals)
+
+
 if __name__ == '__main__':
     test_init()
     test_params()
     test_interp()
+    test_coords()
+    test_zenith()
