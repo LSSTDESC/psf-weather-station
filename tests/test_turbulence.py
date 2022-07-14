@@ -27,7 +27,7 @@ def test_turbulence_draws():
                             err_msg='error reproducing turbulence integrals')
 
     # second, test with wind correlation for ground layer
-    src = 'ecmwf' if len(forecast['u'].iat[0]) > 50 else 'noaa'
+    src = 'ecmwf' if len(p.data_fa['u'].iat[0]) > 50 else 'noaa'
     if src == 'noaa':
         j_gl_goal = 1.4466640614052723e-13
         j_fa_goal = 3.3034875838653924e-14
