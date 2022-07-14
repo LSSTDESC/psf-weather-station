@@ -345,8 +345,8 @@ def integrate_in_bins(cn2, h, edges):
         # find the h samples that are within the altitude range of integration
         h_i = h_samples[(h_samples < edges[i+1] * 1000) &
                         (h_samples > edges[i] * 1000)]
-        # get Cn2 interpolation at those values of h
-        cn2_i = np.exp(interpolate(h * 1000, np.log(cn2), h_i, ddz=False))
+        # get Cn2 interpolation at those values of h -- s=0 for no smoothing.
+        cn2_i = np.exp(interpolate(h * 1000, np.log(cn2), h_i, ddz=False, s=0))
         # numerically integrate to find the J value for this bin
         J.append(trapz(cn2_i, h_i))
 
