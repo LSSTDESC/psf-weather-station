@@ -10,6 +10,6 @@ setup(
     author_email='chebert@stanford.edu',
     license='MIT',
     packages=['psfws'],
-    package_data={'psfws': ['data/*.pkl', 'data/*.npy']},
+    package_data={'psfws': ['data/*.pkl', 'data/*.p', 'data/*.npy']},
     python_requires='>=3.5'
 )
