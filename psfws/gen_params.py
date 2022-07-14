@@ -42,8 +42,7 @@ class ParameterGenerator():
                         'data/gfs_-30.0_289.5_20190501-20191101.pkl']
         telemetry_file: Path to telemetry data. If None, forecast data
                         will be used for ground level information. [default:
-                        'data/tel_dict_CP_20190501-20191101.pkl'] 
-
+                        'data/tel_dict_CP_20190501-20191101.pkl']
 
     Attributes:
         h0:             Altitude of observatory. Measured in km with respect to 
@@ -318,7 +317,8 @@ class ParameterGenerator():
                 np.array([self.h0] + fa_layers),
                 np.array([self.h0] + fa_edges))
 
-    def get_parameters(self, pt, nl=8, s=0, location='mean'):
+    def get_parameters(self, pt, nl=8, s=0, location='mean', skycoord=False,
+                       alt=None, az=None, lat=30.2446, lon=70.7494):
         """Get parameters from dataset ``pt`` for a set of atmospheric layers.
         
         Returns a dictionary of wind and turbulence parameter dict for ``nl``
@@ -336,6 +336,14 @@ class ParameterGenerator():
                         estimate. [default: 0]
             location:   Method for setting centroid of layer, must be one of
                         (``mean``, ``com``). [default: ``mean``]
+            skycoord:   Whether to return parameters in sky coordinates (e.g. if
+                        using GalSim, select True). If False, parameters are 
+                        returned in local north/east coordinates. If True,
+                        values of alt/az must be given. [default: False]
+            alt, az:    Altitude and azimuth of telescope pointing. [default:
+                        None, None]
+            lat, lon:   Latitude and longitude of the observatory, in degrees.
+                        [default: Rubin Observatory, at 30.2446, 70.7494]
 
         """
         try:
@@ -357,6 +365,10 @@ class ParameterGenerator():
 
         params['h'] = h_layers
         params['j'] = j
+        params['edges'] = h_edges
+
+        if skycoord == True:
+            params = utils.convert_to_galsim(params, alt, az, lat, lon)
         return params
 
     def draw_parameters(self, nl=8, s=0, location='mean'):

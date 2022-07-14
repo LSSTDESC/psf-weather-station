@@ -7,6 +7,79 @@ from scipy.integrate import trapz
 import scipy.stats
 
 
+def convert_to_galsim(params, alt, az, lat=30.2446, lon=70.7494):
+    """Convert parameter vector params to coordinates used by GalSim."""
+    # rotate wind vector:
+    obs_nez, sky_nez = get_both_nez(alt, az, lat, lon)
+    
+    sky_v, sky_u = [], []
+    for v,u in zip(params['v'], params['u']):
+        obs_wind = v * obs_nez[0] + u * obs_nez[1]
+        sky_wind = np.dot(sky_nez, obs_wind)
+        sky_v.append(sky_wind[0])
+        sky_u.append(sky_wind[1])
+
+    # modify params: 
+    params['v'], params['u'] = sky_v, sky_u
+    params['speed'] = np.hypot(sky_v, sky_u)
+    params['phi'] = to_direction(sky_v, sky_u)
+
+    # use zenith angle to modify altitudes to LOS distances
+    sec_zenith = 1 / np.cos(np.radians(90 - az))
+    params['h'] = [h * sec_zenith for h in params['h']]
+    params['edges'] = [h * sec_zenith for h in params['edges']]
+
+    # use zenith angle to modify turbulence parameters
+    params['j'] = [j * sec_zenith for j in params['j']]
+    return params
+
+
+def get_obs_nez(lat,lon):
+    """Get North, East, and zenith unit vectors for observatory at Earth lat,lon."""
+    north = np.array([-np.cos(lon)*np.sin(lat),
+                      -np.sin(lon)*np.sin(lat),
+                      np.cos(lat)])
+    zenith = np.array([np.cos(lon)*np.cos(lat),
+                       np.sin(lon)*np.cos(lat),
+                       np.sin(lat)])
+    east = np.cross(north, zenith)
+    # unit vectors along _rows_
+    return np.array([north, east, zenith])
+
+def get_both_nez(alt, az, lat, lon):
+    """Get N, E, zenith unit vectors for observing position alt,az from lat,lon.
+    
+    Notes:
+    - az = 0 means North, 90 means East; alt = 0 means horizon, 90 means zenith
+    - Rodrigues' rotation formula 
+      (https://en.wikipedia.org/wiki/Rodrigues'_rotation_formula) reduces to: 
+          v1 = zenith cos(th) - north sin(th) + 0,
+      with v = boresight, k = east, th = -(90 - alt), ie for rot about zenith.
+    """
+    # convert everything to radians
+    lat = -np.deg2rad(lat)
+    lon = -np.deg2rad(lon)
+    alt = np.deg2rad(alt)
+    az = np.deg2rad(az)
+    
+    # compute n/e/z vectors of observatory
+    obs_nez = get_obs_nez(lat,lon)
+
+    # rotate z by zenith then azimuth to get boresight in direction of pointing
+    th = -(np.pi/2 - alt)
+    v1 = obs_nez[2] * np.cos(th) - obs_nez[0] * np.sin(th)
+    boresight = v1 * np.cos(-az) + np.cross(obs_nez[2], v1) * np.sin(-az) \
+                + obs_nez[2] * np.dot(obs_nez[2], v1) * (1 - np.cos(-az))
+
+    # compute n/e/z vectors on "the sky"
+    lon = np.arctan2(boresight[1], boresight[0])
+    lat = np.arcsin(boresight[2])  # assume boresight is normalized
+    north = np.array([-np.cos(lon)*np.sin(lat), -np.sin(lon)*np.sin(lat), np.cos(lat)])
+    # East = North x boresight
+    east = np.cross(north, boresight)
+    
+    return obs_nez, np.array([north, east, boresight])
+
 def lognorm(sigma, scale):
     """Return a scipy stats lognorm defined by parameters sigma and scale.
 
@@ -156,7 +229,7 @@ def match_telemetry(telemetry, forecast_dates):
     n = len(forecast_dates)
 
     speed = telemetry['speed']
-    direction = telemetry['dir']
+    direction = telemetry['phi']
     temp = telemetry['t']
 
     speed_ids = [speed.index[abs(forecast_dates[i] - speed.index)
