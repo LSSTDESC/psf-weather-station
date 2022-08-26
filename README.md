@@ -30,7 +30,7 @@ In Python, import as psfws:
 `numpy, pandas, pickle, scipy, pathlib`
 
 ## usage
-See the `notebooks/demo.ipynb` notebook for an example of running an atmospheric PSF simulation using parameters from `psf-weather-station`.
+See this [demo notebook](https://github.com/LSSTDESC/psf-weather-station/blob/master/notebooks/psf-weather-station-demo.ipynb) for an example of running an atmospheric PSF simulation using parameters from `psf-weather-station`.
 
 ## downloading weather forecasting data
 The repository contains code to easily download and process GFS and/or ERA5 data of interest for the user.
