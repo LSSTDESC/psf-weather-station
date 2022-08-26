@@ -36,7 +36,7 @@ def test_turbulence_draws():
         j_fa_goal = 6.408088187515762e-13
         
     p = psfws.ParameterGenerator(rho_jv=.7, seed=2012)
-    pt = p._rng.choice(p.data_fa.index)
+    pt = p.draw_datapoint()
     j_fa_res, j_gl_res = p._draw_j(pt)
 
     np.testing.assert_equal([j_fa_res, j_gl_res], [j_fa_goal, j_gl_goal],
@@ -62,11 +62,11 @@ def test_turbulence_integration():
 
     # test sum FA weights = j integral
     p = psfws.ParameterGenerator(seed=25493867)
-    pt = p._rng.choice(p.data_fa.index)
+    pt = p.draw_datapoint()
     j, layers, edges = p.get_turbulence_integral(pt, nl=8, location='mean')
     # need to reset rng to compare
     p = psfws.ParameterGenerator(seed=25493867)
-    pt = p._rng.choice(p.data_fa.index)
+    pt = p.draw_datapoint()
     j_fa, j_gl = p._draw_j(pt)
     np.testing.assert_allclose([j_fa, j_gl], [np.sum(j[1:]), j[0]], atol=1e-17,
                                err_msg='error with turbulence weighting')
@@ -75,7 +75,7 @@ def test_turbulence_integration():
 def test_turbulence_altitudes():
     # first make sure number of weights == number of layers == len(edges)-1
     p = psfws.ParameterGenerator(seed=85647724)
-    pt = p._rng.choice(p.data_fa.index)
+    pt = p.draw_datapoint()
     nlayers = 12
     mj, mlayers, medges = p.get_turbulence_integral(pt, nl=nlayers, location='mean')
     np.testing.assert_equal([len(mj), len(mj)], [len(mlayers), len(medges) - 1],

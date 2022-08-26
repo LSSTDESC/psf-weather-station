@@ -168,13 +168,6 @@ def to_direction(x, y):
     return (d + 180) % 360
 
 
-def to_components(s, d):
-    """Calculate the wind velocity components given speed/direction."""
-    v = s * np.cos((d - 180) * np.pi/180)
-    u = s * np.sin((d - 180) * np.pi/180)
-    return {'v': v, 'u': u}
-
-
 def process_forecast(df):
     """Return dataframe of processed global forecasting system data.
 
@@ -253,11 +246,12 @@ def match_telemetry(telemetry, forecast_dates):
     matched_t = [np.median(temp.loc[temp_ids[i]])
                  for i in range(n) if i in ids_to_keep]
 
-    # calculate velocity componenents from the matched speed/directions
-    uv = to_components(np.array(matched_s), np.array(matched_d))
+    # calculate velocity componenents from the matched speed/directions    
+    v = np.array(matched_s) * np.cos((np.array(matched_d) - 180) * np.pi/180)
+    u = np.array(matched_s) * np.sin((np.array(matched_d) - 180) * np.pi/180)
 
     return ({'speed': np.array(matched_s), 'phi': np.array(matched_d),
-             't': np.array(matched_t), 'u': uv['u'], 'v': uv['v']},
+             't': np.array(matched_t), 'u': u, 'v': v},
             forecast_dates[ids_to_keep])
 
 
@@ -355,7 +349,7 @@ def integrate_in_bins(cn2, h, edges):
     return J
 
 
-def smooth_direction(directions):
+def smooth_dir(directions):
     """Return "smoothed" dirs by shifting points +/- 360 for smooth curve."""
     smooth_dir = np.zeros(directions.shape)
     smooth_dir[0] = directions[0]

@@ -44,7 +44,7 @@ def test_init():
                             [False, True],
                             err_msg='Error in altitude definitions!')
 
-    pt = np.random.choice(p.data_gl.index)
+    pt = p.draw_datapoint()
     # check u,v conversion to speed
     test_speed = np.hypot(p.data_fa.at[pt,'u'], p.data_fa.at[pt,'v'])
     np.testing.assert_allclose(test_speed, p.data_fa.at[pt,'speed'],
@@ -75,7 +75,7 @@ def test_params():
     np.testing.assert_raises(TypeError, p.get_measurements, '20190510')
     # and pd.Timestamp of date not in index should raise KeyError
     np.testing.assert_raises(KeyError, p.get_measurements,
-                             pd.Timestamp('19000420'))
+                             pd.Timestamp('19000420', tz='UTC'))
 
 
     # test get_parameters()

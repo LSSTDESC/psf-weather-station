@@ -143,9 +143,9 @@ class ParameterGenerator():
         h = np.array([h/1000 for h in p_and_h[src]['h'][::-1]])
 
         # find lower gl cutoff:
-        where_h0 = np.where(h > self.h0)[0][0]
+        where_h0 = np.searchsorted(h, self.h0)
         # free atm ends at high altitude
-        where_end = np.where(h > self.h0 + 23)[0][0]
+        where_end = np.searchsorted(h, self.h0 + 23)
 
         if use_telemetry:
             raw_telemetry = pickle.load(open(self._paths['telemetry'], 'rb'))
@@ -179,7 +179,7 @@ class ParameterGenerator():
         self.data_fa = forecast
 
         # ground layer ends at ~1km above telescope, save for later 
-        self.fa_start = np.where(self.h > self.h0 + .8)[0][0]   
+        self.fa_start = np.searchsorted(self.h, self.h0 + 0.8)
         
     def get_measurements(self, pt):
         """Get a matched set of measurements from datapoint with index ``pt``.
@@ -209,7 +209,7 @@ class ParameterGenerator():
                 'speed': np.hstack([gl.at['speed'], fa.at['speed']]),
                 't': np.hstack([gl.at['t'], fa.at['t']]),
                 'h': np.hstack([self.h0, self.h]),
-                'phi': utils.smooth_direction(direction)}
+                'phi': utils.smooth_dir(direction)}
 
     def _interpolate(self, p_dict, h_out, s=None):
         """Get interpolations & derivatives of p_dict at new heights h_out."""
@@ -241,8 +241,7 @@ class ParameterGenerator():
                                                   self.p,
                                                   h_out * 1000,
                                                   s=s)
-        out['phi'] = utils.smooth_direction(utils.to_direction(out['v'],
-                                                                     out['u']))
+        out['phi'] = utils.smooth_dir(utils.to_direction(out['v'], out['u']))
         out['speed'] = np.hypot(out['u'], out['v'])
         out['h'] = h_out
 
@@ -260,7 +259,7 @@ class ParameterGenerator():
                     self.data_gl.at[pt, 'j_gl'] * a)
 
     def _get_fa_cn2(self, pt):
-        """Get free atmosphere Cn2 and h arrays for datapoint with index pt.
+        """Get free atmosphere $C_n^2$ and h arrays for datapoint with index pt.
 
         Empirical model for Cn2 from Osborn et al 2018:
         https://doi.org/10.1093/mnras/sty1898.
@@ -371,12 +370,16 @@ class ParameterGenerator():
             params = utils.convert_to_galsim(params, alt, az, lat, lon)
         return params
 
+    def draw_datapoint(self):
+        """Draw a random datapoint from the dataset and return index."""
+        return self._rng.choice(self.data_fa.index)
+        
     def draw_parameters(self, nl=8, s=0, location='mean'):
         """Draw a random datapoint from the dataset, and return parameters.
 
         Output is the same as ``get_parameters``.
 
         """
-        pt = self._rng.choice(self.data_fa.index)
+        pt = self.draw_datapoint()
         return self.get_parameters(pt=pt, nl=nl, s=s, location=location)
 
