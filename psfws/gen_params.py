@@ -110,6 +110,9 @@ class ParameterGenerator():
 
         # set ground altitude, turbulence pdf, and j/wind correlation
         self.h0 = h_tel 
+        self.h_atm_end = 25  # km
+        self.gl_height = 0.8  # km
+
         self.j_pdf = {k: utils.lognorm(v['s'], v['scale']) for k, v in turbulence.items()}
         self.rho_jv = rho_jv
 
@@ -142,13 +145,13 @@ class ParameterGenerator():
         # load heights and pressures
         p_and_h = pickle.load(open(self._paths['p_and_h'], 'rb'))
         src = 'ecmwf' if len(forecast['u'].iat[0]) > 50 else 'noaa'
-        # reverse to match forecast data order, convert to m
-        h = np.array([h/1000 for h in p_and_h[src]['h'][::-1]])
-
-        # find lower gl cutoff:
+        
+        # reverse (input was in reverse height order), convert from m to km
+        h = p_and_h[src]['h'][::-1] / 1000
+        # find lower gl cutoff (h is sorted due to previous line)
         where_h0 = np.searchsorted(h, self.h0)
         # free atm ends at high altitude
-        where_end = np.searchsorted(h, self.h0 + 23)
+        where_end = np.searchsorted(h, self.atm_end)
 
         if use_telemetry:
             raw_telemetry = pickle.load(open(self._paths['telemetry'], 'rb'))
@@ -182,7 +185,7 @@ class ParameterGenerator():
         self.data_fa = forecast
 
         # ground layer ends at ~1km above telescope, save for later 
-        self.fa_start = np.searchsorted(self.h, self.h0 + 0.8)
+        self.fa_start = np.searchsorted(self.h, self.h0 + self.gl_height)
         
     def get_measurements(self, pt):
         """Get a matched set of measurements from datapoint with index ``pt``.
