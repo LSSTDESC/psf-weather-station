@@ -4,7 +4,7 @@ import numpy as np
 import pickle
 import pandas as pd
 import pathlib
-from psfws import utils
+from . import utils
 
 
 class ParameterGenerator():
@@ -82,8 +82,7 @@ class ParameterGenerator():
 
     """
 
-    def __init__(self, seed=None, h_tel=2.715, rho_jv=0,
-                 turbulence={'gl':{'s':0.62,'scale':2.34},'fa':{'s':0.84,'scale':1.51}},
+    def __init__(self, seed=None, h_tel=2.715, rho_jv=0, turbulence=None,
                  forecast_file='data/ecmwf_-30.25_-70.75_20190501_20191031.p',
                  telemetry_file='data/tel_dict_CP_20190501-20191101.pkl'):
         # set up the paths to data files, and check they exist.
@@ -105,6 +104,10 @@ class ParameterGenerator():
                 print(f'code running from: {psfws_base}')
                 raise FileNotFoundError(f'file {file_path} not found!')
 
+        if turbulence is None:
+            turbulence = {'gl': {'s': 0.62, 'scale': 2.34},
+                          'fa': {'s': 0.84, 'scale': 1.51}}
+
         # set ground altitude, turbulence pdf, and j/wind correlation
         self.h0 = h_tel 
         self.j_pdf = {k: utils.lognorm(v['s'], v['scale']) for k, v in turbulence.items()}
@@ -117,7 +120,7 @@ class ParameterGenerator():
 
         # if using correlation between wind speed and ground turbulence,
         # draw values in advance and perform correlation of marginals
-        if self.rho_jv is not 0:
+        if self.rho_jv != 0:
             # draw JGL values
             j_gl = self.j_pdf['gl'].rvs(size=self.N, random_state=self._rng)
             # correlate and store modified dataframe
