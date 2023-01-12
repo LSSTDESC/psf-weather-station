@@ -7,7 +7,7 @@ from scipy.integrate import trapz
 import scipy.stats
 
 
-def convert_to_galsim(params, alt, az, lat=30.2446, lon=70.7494):
+def convert_to_galsim(params, alt, az, lat=-30.2446, lon=-70.7494):
     """Convert parameter vector params to coordinates used by GalSim."""
     # rotate wind vector:
     obs_nez, sky_nez = get_both_nez(alt, az, lat, lon)
@@ -25,7 +25,7 @@ def convert_to_galsim(params, alt, az, lat=30.2446, lon=70.7494):
     params['phi'] = to_direction(sky_v, sky_u)
 
     # use zenith angle to modify altitudes to LOS distances
-    sec_zenith = 1 / np.cos(np.radians(90 - az))
+    sec_zenith = 1 / np.cos(np.radians(90 - alt))
     params['h'] = [h * sec_zenith for h in params['h']]
     params['edges'] = [h * sec_zenith for h in params['edges']]
 
@@ -50,34 +50,29 @@ def get_both_nez(alt, az, lat, lon):
     """Get N, E, zenith unit vectors for observing position alt,az from lat,lon.
     
     Notes:
-    - az = 0 means North, 90 means East; alt = 0 means horizon, 90 means zenith
-    - Rodrigues' rotation formula 
-      (https://en.wikipedia.org/wiki/Rodrigues'_rotation_formula) reduces to: 
-          v1 = zenith cos(th) - north sin(th) + 0,
-      with v = boresight, k = east, th = -(90 - alt), ie for rot about zenith.
+    - az = 0 means North, 90 means East
+    - alt = 0 means horizon, 90 means zenith
     """
     # convert everything to radians
-    lat = -np.deg2rad(lat)
-    lon = -np.deg2rad(lon)
+    lat = np.deg2rad(lat)
+    lon = np.deg2rad(lon)
     alt = np.deg2rad(alt)
     az = np.deg2rad(az)
     
     # compute n/e/z vectors of observatory
-    obs_nez = get_obs_nez(lat,lon)
+    N, E, Z = get_obs_nez(lat,lon)
 
-    # rotate z by zenith then azimuth to get boresight in direction of pointing
-    th = -(np.pi/2 - alt)
-    v1 = obs_nez[2] * np.cos(th) - obs_nez[0] * np.sin(th)
-    boresight = v1 * np.cos(-az) + np.cross(obs_nez[2], v1) * np.sin(-az) \
-                + obs_nez[2] * np.dot(obs_nez[2], v1) * (1 - np.cos(-az))
+    # find compass direction the telescope points to
+    compass_dir = N * np.cos(az) + E * np.sin(az)
+    # lift this from horizon by altitude angle
+    boresight = Z * np.sin(alt) + compass_dir * np.cos(alt)
 
-    # compute n/e/z vectors on "the sky"
-    lon = np.arctan2(boresight[1], boresight[0])
-    lat = np.arcsin(boresight[2])  # assume boresight is normalized
-    north = np.array([-np.cos(lon)*np.sin(lat), -np.sin(lon)*np.sin(lat), np.cos(lat)])
-    # East = North x boresight
-    east = np.cross(north, boresight)
-    
+    # in our coordinates, (0,0,1) points to the north celestial pole (ncp)
+    ncp = np.array([0,0,1])
+    east = np.cross(ncp, boresight)
+    east /= np.sqrt(np.dot(east, east))  # normalized
+    north = np.cross(boresight, east)
+
     return obs_nez, np.array([north, east, boresight])
 
 def lognorm(sigma, scale):
