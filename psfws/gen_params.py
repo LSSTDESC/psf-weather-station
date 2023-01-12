@@ -137,11 +137,6 @@ class ParameterGenerator():
         forecast = pickle.load(open(self._paths['forecast_data'], 'rb'))
         forecast = utils.process_forecast(forecast)
 
-        try: # first, find forecast dates within the date range desired
-            forecast_dates = forecast.index
-        except KeyError:
-            print("Requested dates are not within range of available data!")
-
         # load heights and pressures
         p_and_h = pickle.load(open(self._paths['p_and_h'], 'rb'))
         src = 'ecmwf' if len(forecast['u'].iat[0]) > 50 else 'noaa'
@@ -272,8 +267,13 @@ class ParameterGenerator():
 
         """
         # pick out relevant wind data
-        fa = dict(self.data_fa.loc[pt])
-
+        try:
+            fa = dict(self.data_fa.loc[pt])
+        except KeyError:
+            if type(pt) == str:
+                raise TypeError(f'pt type must be pd.Timestamp not str!')
+            if type(pt) == pd.Timestamp:
+                raise KeyError(f'{pt} not found in data index!')
         # only calculate Cn2 with this model starting at FA start
         h_complete = np.linspace(self.h[self.fa_start], max(self.h), 500)
         inputs = self._interpolate(fa, h_complete)
