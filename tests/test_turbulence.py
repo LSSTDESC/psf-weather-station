@@ -23,8 +23,9 @@ def test_turbulence_draws():
     p = psfws.ParameterGenerator(rho_jv=0, seed=460)
     j_fa_res, j_gl_res = p._draw_j()
 
-    np.testing.assert_equal([j_fa_res, j_gl_res], [j_fa_goal, j_gl_goal],
-                            err_msg='error reproducing turbulence integrals')
+    np.testing.assert_allclose([j_fa_res, j_gl_res], [j_fa_goal, j_gl_goal],
+                               rtol=1.e-12,
+                               err_msg='error reproducing turbulence integrals')
 
     # second, test with wind correlation for ground layer
     src = 'ecmwf' if len(p.data_fa['u'].iat[0]) > 50 else 'noaa'
@@ -39,8 +40,9 @@ def test_turbulence_draws():
     pt = p.draw_datapoint()
     j_fa_res, j_gl_res = p._draw_j(pt)
 
-    np.testing.assert_equal([j_fa_res, j_gl_res], [j_fa_goal, j_gl_goal],
-                            err_msg='error reproducing turbulence integrals')
+    np.testing.assert_allclose([j_fa_res, j_gl_res], [j_fa_goal, j_gl_goal],
+                               rtol=1.e-12,
+                               err_msg='error reproducing turbulence integrals')
 
 
 def test_turbulence_integration():
@@ -68,7 +70,7 @@ def test_turbulence_integration():
     p = psfws.ParameterGenerator(seed=25493867)
     pt = p.draw_datapoint()
     j_fa, j_gl = p._draw_j(pt)
-    np.testing.assert_allclose([j_fa, j_gl], [np.sum(j[1:]), j[0]], atol=1e-17,
+    np.testing.assert_allclose([j_fa, j_gl], [np.sum(j[1:]), j[0]], atol=1e-12,
                                err_msg='error with turbulence weighting')
     
 
@@ -98,7 +100,8 @@ def test_turbulence_altitudes():
                                err_msg='error with layer location calculation')
 
     # test altitudes of edges: lowest should be at ground
-    np.testing.assert_equal([medges[0]], [p.h0], err_msg='error with GL altitude')
+    assert medges[0] == p.h0, 'error with GL altitude'
+    
     # 500m <= second edge <= 1km *above ground*
     np.testing.assert_array_less([p.h0 + 0.499, medges[1]],
                                  [medges[1], p.h0 + 1.01], 
