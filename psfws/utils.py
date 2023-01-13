@@ -108,28 +108,29 @@ def correlate_marginals(X, y, rho, rng):
     swp_window = (y_srtd[-1]-y_srtd[0]) / 15
     N = len(y)
 
-    # loop ten times over the dataset
+    # loop a hundred times over the dataset
     for i in range(100 * N):
         # index of the first pair in a swap
         i_first = i % N
         # find list of points within the swap_window of this first point
-        valid_indices = np.argwhere(abs(y_srtd - y_srtd[i_first]) < swp_window)
-        # randomly chose one of these as the swap pair
+        valid_indices, _ = np.where(abs(y_srtd - y_srtd[i_first]) < swp_window)
+        # randomly choose one of these as the swap pair
         i_swp = rng.choice(valid_indices.flatten())
         # swap entries
         y_srtd[i_first], y_srtd[i_swp] = y_srtd[i_swp], y_srtd[i_first]
 
-        if np.corrcoef(X['speed'], y_srtd)[0][1] < rho:
-            break
+        if np.corrcoef(X['speed'], y_srtd)[0][1] <= rho:
+            # add y to the dataframe X as a new column
+            try:
+                X.insert(loc=2, column='j_gl', value=y_srtd)
+            except ValueError:
+                print('turbulence column already exists. Check!')
 
-    if np.corrcoef(X['speed'], y_srtd)[0][1] > rho:
+            # task accomplished, we can leave now
+            break
+    else: 
+        # break never executed, so corr coeff > rho
         raise ValueError('did not reach desired correlation coefficient!')
-    else:
-        # add y to the dataframe X as a newcolumn
-        try:
-            X.insert(loc=2, column='j_gl', value=y_srtd)
-        except ValueError:
-            print('turbulence column already exists. Check!')
 
     # return dataframe which now contains the joint PDF
     return X
