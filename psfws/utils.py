@@ -22,7 +22,7 @@ def convert_to_galsim(params, alt, az, lat=-30.2446, lon=-70.7494):
     # modify params: 
     params['v'], params['u'] = sky_v, sky_u
     params['speed'] = np.hypot(sky_v, sky_u)
-    params['phi'] = to_direction(sky_v, sky_u)
+    params['phi'] = to_direction(sky_u, sky_v)
 
     # use zenith angle to modify altitudes to LOS distances
     sec_zenith = 1 / np.cos(np.radians(90 - alt))
@@ -158,9 +158,14 @@ def process_telemetry(telemetry):
             't': tel_temp.loc[temp_mask] + 273.15}
 
 
-def to_direction(x, y):
-    """Return wind direction, in degrees, from u,v components of velocity."""
-    d = np.arctan2(y, x) * (180/np.pi)
+def to_direction(u, v):
+    """Return wind direction, in degrees, from u,v components of velocity.
+
+    (u,v) are components of wind speed toward east, north respectively.
+    """
+    # d is angle east of north
+    d = np.arctan2(u, v) * (180/np.pi)
+    # convention is direction wind comes *from* rather than blows *to*: add 180.
     return (d + 180) % 360
 
 
@@ -187,7 +192,7 @@ def process_forecast(df):
     df['speed'] = [np.hypot(df['u'].values[i], df['v'].values[i])
                    for i in range(n)]
 
-    df['phi'] = [to_direction(df['v'].values[i], df['u'].values[i])
+    df['phi'] = [to_direction(df['u'].values[i], df['v'].values[i])
                  for i in range(n)]
 
     if 'p' in df.columns:

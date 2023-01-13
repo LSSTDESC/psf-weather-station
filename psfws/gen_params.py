@@ -242,7 +242,7 @@ class ParameterGenerator():
                                                   self.p,
                                                   h_out * 1000,
                                                   s=s)
-        out['phi'] = utils.smooth_dir(utils.to_direction(out['v'], out['u']))
+        out['phi'] = utils.smooth_dir(utils.to_direction(out['u'], out['v']))
         out['speed'] = np.hypot(out['u'], out['v'])
         out['h'] = h_out
 

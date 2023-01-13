@@ -54,7 +54,7 @@ def test_init():
     # one point per quadrant of the UV plane
     u = [-10,20,15,-8]
     v = [-5,-7,10,2]
-    theta_true = [26.56505, 160.70995, 213.69007, 345.96376]
+    theta_true = [63.43494882, 289.29004622, 236.30993247, 104.03624347]
     theta_test = psfws.utils.to_direction(u, v)
     np.testing.assert_allclose(theta_test, theta_true, atol=.0001,
                                err_msg='Error in wind direction conversion!')
