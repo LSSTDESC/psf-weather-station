@@ -290,7 +290,21 @@ def interpolate(x, y, new_x, ddz=True, s=0):
 
 
 def osborn(inputs):
-    """Calculate Cn2 model from Osborn et al 2018."""
+    """Calculate Cn2 model from Osborn et al 2018.
+
+    ADS link to paper: https://ui.adsabs.harvard.edu/abs/2018MNRAS.480.1278O
+    Up to a constant calibration factor, the Osborn model is:
+        Cn2(z) = (80e-6 * P(z) / (T(z) * Theta(z)))**2 
+                 * L(z)**(4/3) 
+                 * Theta'(z)**2
+    Where:
+    - P(z), T(z) are the pressure and temperature profiles
+    - Theta(z), Theta'(z) are the potential temperature profile and gradient 
+    - L(z) is a length scale of energy input, linked empirically to the 
+      turbulent kinetic energy parameterized by wind shears u'(z), v'(z):
+        E = u'(z)**2 + v'(z)**2;
+        L(z) = (2 * E * Theta(z) / (g * Theta'(z)))**(1/2)
+    """
     g = 9.8
 
     # theta and d/dz(theta)
@@ -298,6 +312,8 @@ def osborn(inputs):
 
     # wind shear => caclulate L(h)
     windshear = inputs['dudz']**2 + inputs['dvdz']**2
+    # Absolute value to smooth the occasional numerical issue which causes a 
+    # negative Theta'(z) -- in the FA regime, it should always be positive.
     lz = np.sqrt(2*thetaz / g * windshear / abs(dthetaz))
 
     numerator = 80e-6 * inputs['p'] * dthetaz
@@ -307,7 +323,15 @@ def osborn(inputs):
 
 
 def osborn_theta(inputs):
-    """Calculate potential temperature theta and its derivative."""
+    """Calculate potential temperature theta and its derivative.
+
+    Theta is the potential temperature:
+        Theta(z) = T(z) * (P0 / P(z))**(R/cp)
+    
+    - R is the gas constant of air and cp is the specfic heat capacity at 
+      constant P, the ratio is R/cp = 0.286 for air.
+    - P0 is the pressure 
+    """
     Rcp = 0.286
     P0 = 1000 * 100  # mbar to Pa
 
