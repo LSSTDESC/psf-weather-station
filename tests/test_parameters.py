@@ -139,13 +139,13 @@ def test_zenith():
     # altitude and seeing vs zenith?
     # check by varying zenith, d_los and j vary as expected, ie ~ sec(zenith)
     d_los, j = [], []
-    for az in [90,80,70,60]:
+    for alt in [90,80,70,60]:
         params = {'u':[-10], 'v':[5], 'h':[2.1], 'edges': [1,3], 'j':[1e-13]}
-        p_sky = psfws.utils.convert_to_galsim(params, 60, az)
+        p_sky = psfws.utils.convert_to_galsim(params, alt, 60)
         d_los.append(p_sky['h'][0])
         j.append(p_sky['j'][0])
 
-    # values of sec(zenith) for zenith = 90-az
+    # values of sec(zenith) for zenith = 90-alt
     sec_vals = np.array([1, 1.01542661, 1.06417777, 1.15470054])
     
     np.testing.assert_allclose(np.array(d_los), 2.1 * sec_vals)
