@@ -6,6 +6,7 @@ import pandas as pd
 import pathlib
 from . import utils
 
+data_dir = utils.get_data_path()
 
 class ParameterGenerator():
     """Class to generate realistic input parameters for atmospheric PSF sims.
@@ -83,17 +84,15 @@ class ParameterGenerator():
     """
 
     def __init__(self, seed=None, h_tel=2.715, rho_jv=0, turbulence=None,
-                 forecast_file='data/ecmwf_-30.25_-70.75_20190501_20191031.p',
-                 telemetry_file='data/tel_dict_CP_20190501-20191101.pkl'):
+                 forecast_file='ecmwf_-30.25_-70.75_20190501_20191031.p',
+                 telemetry_file='tel_dict_CP_20190501-20191101.pkl'):
         # set up the paths to data files, and check they exist.
-        psfws_base = pathlib.Path(__file__).parents[0].absolute()
-
         self._paths = \
-            {'forecast_data': pathlib.Path.joinpath(psfws_base, forecast_file),
-             'p_and_h': pathlib.Path.joinpath(psfws_base, 'data/p_and_h.p')}
+            {'forecast_data': pathlib.Path.joinpath(data_dir, forecast_file),
+             'p_and_h': pathlib.Path.joinpath(data_dir, 'p_and_h.p')}
 
         if telemetry_file is not None:
-            self._paths['telemetry'] = pathlib.Path.joinpath(psfws_base, 
+            self._paths['telemetry'] = pathlib.Path.joinpath(data_dir, 
                                                              telemetry_file)
             use_telemetry = True
         else:
@@ -101,7 +100,7 @@ class ParameterGenerator():
              
         for file_path in self._paths.values():
             if not file_path.is_file():
-                print(f'code running from: {psfws_base}')
+                print(f'code running from: {data_dir}')
                 raise FileNotFoundError(f'file {file_path} not found!')
 
         if turbulence is None:

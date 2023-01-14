@@ -5,9 +5,9 @@ import pandas as pd
 import pickle
 import pathlib
 import os
+from . import utils
 
-PKG_BASE = pathlib.Path(__file__).resolve().parents[0].absolute()
-PKG_DATA_DIR = pathlib.Path.joinpath(PKG_BASE, 'data/')
+PKG_DATA_DIR = utils.get_data_path()
 
 
 def _download_ecmwf(m1, m2, lat, lon, save_path):

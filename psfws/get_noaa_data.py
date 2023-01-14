@@ -6,14 +6,14 @@ import pandas as pd
 import pickle
 import pathlib
 from datetime import timedelta, datetime
+from . import utils
 
 
 url = 'https://www.ncei.noaa.gov/thredds/fileServer/' + \
       'model-gfs-g4-anl-files-old/'
 URL_BASE = pathlib.Path(url)
 
-PKG_BASE = pathlib.Path(__file__).resolve().parents[1].absolute()
-DATA_DIR = pathlib.Path.joinpath(PKG_BASE, 'data/')
+DATA_DIR = get_data_path()
 
 
 def _download_gfs_file(date, time):

@@ -5,7 +5,13 @@ import pandas as pd
 from scipy.interpolate import UnivariateSpline, make_interp_spline
 from scipy.integrate import trapz
 import scipy.stats
+import os
 
+def get_data_path():
+    # set up path to data directory
+    psfws_dir = os.path.split(os.path.realpath(__file__))[0]
+    install_dir = os.path.split(psfws_dir)[0]
+    data_dir = os.path.join(install_dir, 'psfws', 'data')
 
 def convert_to_galsim(params, alt, az, lat=-30.2446, lon=-70.7494):
     """Convert parameter vector params to coordinates used by GalSim."""
@@ -350,8 +356,8 @@ def integrate_in_bins(cn2, h, edges):
     Parameters:
     -----------
     cn2 : array, values of cn2
-    h : array, altitudes of input cn2 values
-    edges: array, edges of integration regions
+    h : array, altitudes of input cn2 values in km
+    edges: array, edges of integration regions in km
 
     Returns:
     -------
@@ -359,17 +365,21 @@ def integrate_in_bins(cn2, h, edges):
 
     """
     # make an equally spaced sampling in h across whole range:
-    h_samples = np.linspace(edges[0] * 1000, edges[-1] * 1000, 1000)
+    h_samples = np.linspace(edges[0], edges[-1], 1000)
 
     J = []
     for i in range(len(edges)-1):
         # find the h samples that are within the altitude range of integration
-        h_i = h_samples[(h_samples < edges[i+1] * 1000) &
-                        (h_samples > edges[i] * 1000)]
+        h_i = h_samples[(h_samples < edges[i+1]) &
+                        (h_samples > edges[i])]
         # get Cn2 interpolation at those values of h -- s=0 for no smoothing.
-        cn2_i = np.exp(interpolate(h * 1000, np.log(cn2), h_i, ddz=False, s=0))
+        cn2_i = np.exp(interpolate(h, np.log(cn2), h_i, ddz=False, s=0))
         # numerically integrate to find the J value for this bin
         J.append(trapz(cn2_i, h_i))
+    
+    # The dh we integrated over was in km, rather than m. Convert that now, so
+    # that J has units of m**(1/3) as desired
+    J *= 1000  
 
     return J
 
