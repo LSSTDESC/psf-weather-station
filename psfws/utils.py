@@ -380,7 +380,7 @@ def integrate_in_bins(cn2, h, edges):
     
     # The dh we integrated over was in km, rather than m. Convert that now, so
     # that J has units of m**(1/3) as desired
-    J *= 1000  
+    J = np.array(J) * 1000
 
     return J
 
