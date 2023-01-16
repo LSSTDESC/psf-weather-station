@@ -1,7 +1,7 @@
 from setuptools import setup
 import os
 
-# stole this form ImSim:
+# stole this from ImSim:
 def all_files_from(dir, ext=''):
     """Quick function to get all files from directory and all subdirectories
     """

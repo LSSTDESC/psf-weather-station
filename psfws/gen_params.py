@@ -100,10 +100,11 @@ class ParameterGenerator():
              
         for file_path in self._paths.values():
             if not file_path.is_file():
-                print(f'code running from: {data_dir}')
+                print(f'Looking for data in the directory: {data_dir}')
                 raise FileNotFoundError(f'file {file_path} not found!')
 
         if turbulence is None:
+            # default values are for Cerro Pachon
             turbulence = {'gl': {'s': 0.62, 'scale': 2.34},
                           'fa': {'s': 0.84, 'scale': 1.51}}
 
