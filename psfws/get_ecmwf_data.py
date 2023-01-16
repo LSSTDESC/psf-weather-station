@@ -7,7 +7,7 @@ import pathlib
 import os
 from . import utils
 
-PKG_DATA_DIR = utils.get_data_path()
+DATA_DIR = utils.get_data_path()
 
 
 def _download_ecmwf(m1, m2, lat, lon, save_path):
@@ -224,7 +224,7 @@ if __name__ == '__main__':
     
     # if no custom option defined, put the grib files in the data folder
     if args.grib_dir is None:
-        grib_dir = PKG_DATA_DIR
+        grib_dir = DATA_DIR
     else:
         grib_dir = pathlib.Path(args.grib_dir)
     # move CWD to data directory for easier downloading/etc

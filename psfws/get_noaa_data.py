@@ -13,7 +13,7 @@ url = 'https://www.ncei.noaa.gov/thredds/fileServer/' + \
       'model-gfs-g4-anl-files-old/'
 URL_BASE = pathlib.Path(url)
 
-DATA_DIR = get_data_path()
+DATA_DIR = utils.get_data_path()
 
 
 def _download_gfs_file(date, time):
