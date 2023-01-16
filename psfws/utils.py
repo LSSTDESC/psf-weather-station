@@ -120,7 +120,7 @@ def correlate_marginals(X, y, rho, rng):
         # index of the first pair in a swap
         i_first = i % N
         # find list of points within the swap_window of this first point
-        valid_indices, _ = np.where(abs(y_srtd - y_srtd[i_first]) < swp_window)
+        valid_indices = np.where(abs(y_srtd - y_srtd[i_first]) < swp_window)
         # randomly choose one of these as the swap pair
         i_swp = rng.choice(valid_indices.flatten())
         # swap entries
