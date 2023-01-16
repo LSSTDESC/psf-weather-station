@@ -12,6 +12,7 @@ def get_data_path():
     psfws_dir = os.path.split(os.path.realpath(__file__))[0]
     install_dir = os.path.split(psfws_dir)[0]
     data_dir = os.path.join(install_dir, 'psfws', 'data')
+    return data_dir
 
 def convert_to_galsim(params, alt, az, lat=-30.2446, lon=-70.7494):
     """Convert parameter vector params to coordinates used by GalSim."""
