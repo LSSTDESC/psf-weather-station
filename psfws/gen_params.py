@@ -26,6 +26,8 @@ class ParameterGenerator():
     Parameters:
         seed:           Random seed to initialize rng [default: None]
         h_tel:          Altitude, in km, of the observatory. [default: 2.715]
+        gl_height:      Thickness of ground layer, in km. Sets the start of the
+                        free atmosphere [default: 0.8km].
         rho_jv:         Desired correlation coefficient between the ground wind
                         speed and the ground turbulence integral. If a nonzero
                         float value is specified, the joint PDF of wind values
@@ -48,6 +50,8 @@ class ParameterGenerator():
     Attributes:
         h0:             Altitude of observatory. Measured in km with respect to 
                         sea level.
+        gl_height:      Thickness of ground layer, in km; sets the start of the
+                        free atmosphere.
         h:              Ndarray of forecasting data altitudes above ``h0``. 
                         Measured in km with respect to sea level. 
         p:              Ndarray of forecast pressures (mbar).
@@ -83,9 +87,9 @@ class ParameterGenerator():
 
     """
 
-    def __init__(self, seed=None, h_tel=2.715, rho_jv=0, turbulence=None,
+    def __init__(self, seed=None, h_tel=2.715, gl_height=0.8, turbulence=None,
                  forecast_file='ecmwf_-30.25_-70.75_20190501_20191031.p',
-                 telemetry_file='tel_dict_CP_20190501-20191101.pkl'):
+                 telemetry_file='tel_dict_CP_20190501-20191101.pkl', rho_jv=0):
         # set up the paths to data files, and check they exist.
         self._paths = \
             {'forecast_data': pathlib.Path.joinpath(data_dir, forecast_file),
@@ -110,8 +114,8 @@ class ParameterGenerator():
 
         # set ground altitude, turbulence pdf, and j/wind correlation
         self.h0 = h_tel 
-        self.h_atm_end = 25  # km
-        self.gl_height = 0.8  # km
+        self._h_atm_end = 25  # km
+        self.gl_height = gl_height
 
         self.j_pdf = {k: utils.lognorm(v['s'], v['scale']) for k, v in turbulence.items()}
         self.rho_jv = rho_jv
@@ -146,7 +150,7 @@ class ParameterGenerator():
         # find lower gl cutoff (h is sorted due to previous line)
         where_h0 = np.searchsorted(h, self.h0)
         # free atm ends at high altitude
-        where_end = np.searchsorted(h, self.atm_end)
+        where_end = np.searchsorted(h, self._h_atm_end)
 
         if use_telemetry:
             raw_telemetry = pickle.load(open(self._paths['telemetry'], 'rb'))
