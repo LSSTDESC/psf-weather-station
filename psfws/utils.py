@@ -79,7 +79,7 @@ def get_both_nez(alt, az, lat, lon):
     east /= np.sqrt(np.dot(east, east))  # normalized
     north = np.cross(boresight, east)
 
-    return obs_nez, np.array([north, east, boresight])
+    return np.array([N,E,Z]), np.array([north, east, boresight])
 
 def lognorm(sigma, scale):
     """Return a scipy stats lognorm defined by parameters sigma and scale.

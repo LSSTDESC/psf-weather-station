@@ -6,7 +6,7 @@ import pandas as pd
 import pathlib
 from . import utils
 
-data_dir = utils.get_data_path()
+data_dir = pathlib.Path(utils.get_data_path())
 
 class ParameterGenerator():
     """Class to generate realistic input parameters for atmospheric PSF sims.
