@@ -4,8 +4,9 @@ import numpy as np
 import pickle
 import pandas as pd
 import pathlib
-from psfws import utils
+from . import utils
 
+data_dir = pathlib.Path(utils.get_data_path())
 
 class ParameterGenerator():
     """Class to generate realistic input parameters for atmospheric PSF sims.
@@ -25,6 +26,8 @@ class ParameterGenerator():
     Parameters:
         seed:           Random seed to initialize rng [default: None]
         h_tel:          Altitude, in km, of the observatory. [default: 2.715]
+        gl_height:      Thickness of ground layer, in km. Sets the start of the
+                        free atmosphere [default: 0.8km].
         rho_jv:         Desired correlation coefficient between the ground wind
                         speed and the ground turbulence integral. If a nonzero
                         float value is specified, the joint PDF of wind values
@@ -47,6 +50,8 @@ class ParameterGenerator():
     Attributes:
         h0:             Altitude of observatory. Measured in km with respect to 
                         sea level.
+        gl_height:      Thickness of ground layer, in km; sets the start of the
+                        free atmosphere.
         h:              Ndarray of forecasting data altitudes above ``h0``. 
                         Measured in km with respect to sea level. 
         p:              Ndarray of forecast pressures (mbar).
@@ -82,19 +87,16 @@ class ParameterGenerator():
 
     """
 
-    def __init__(self, seed=None, h_tel=2.715, rho_jv=0,
-                 turbulence={'gl':{'s':0.62,'scale':2.34},'fa':{'s':0.84,'scale':1.51}},
-                 forecast_file='data/ecmwf_-30.25_-70.75_20190501_20191031.p',
-                 telemetry_file='data/tel_dict_CP_20190501-20191101.pkl'):
+    def __init__(self, seed=None, h_tel=2.715, gl_height=0.8, turbulence=None,
+                 forecast_file='ecmwf_-30.25_-70.75_20190501_20191031.p',
+                 telemetry_file='tel_dict_CP_20190501-20191101.pkl', rho_jv=0):
         # set up the paths to data files, and check they exist.
-        psfws_base = pathlib.Path(__file__).parents[0].absolute()
-
         self._paths = \
-            {'forecast_data': pathlib.Path.joinpath(psfws_base, forecast_file),
-             'p_and_h': pathlib.Path.joinpath(psfws_base, 'data/p_and_h.p')}
+            {'forecast_data': pathlib.Path.joinpath(data_dir, forecast_file),
+             'p_and_h': pathlib.Path.joinpath(data_dir, 'p_and_h.p')}
 
         if telemetry_file is not None:
-            self._paths['telemetry'] = pathlib.Path.joinpath(psfws_base, 
+            self._paths['telemetry'] = pathlib.Path.joinpath(data_dir, 
                                                              telemetry_file)
             use_telemetry = True
         else:
@@ -102,11 +104,19 @@ class ParameterGenerator():
              
         for file_path in self._paths.values():
             if not file_path.is_file():
-                print(f'code running from: {psfws_base}')
+                print(f'Looking for data in the directory: {data_dir}')
                 raise FileNotFoundError(f'file {file_path} not found!')
+
+        if turbulence is None:
+            # default values are for Cerro Pachon
+            turbulence = {'gl': {'s': 0.62, 'scale': 2.34},
+                          'fa': {'s': 0.84, 'scale': 1.51}}
 
         # set ground altitude, turbulence pdf, and j/wind correlation
         self.h0 = h_tel 
+        self._h_atm_end = 25  # km
+        self.gl_height = gl_height
+
         self.j_pdf = {k: utils.lognorm(v['s'], v['scale']) for k, v in turbulence.items()}
         self.rho_jv = rho_jv
 
@@ -117,7 +127,7 @@ class ParameterGenerator():
 
         # if using correlation between wind speed and ground turbulence,
         # draw values in advance and perform correlation of marginals
-        if self.rho_jv is not 0:
+        if self.rho_jv != 0:
             # draw JGL values
             j_gl = self.j_pdf['gl'].rvs(size=self.N, random_state=self._rng)
             # correlate and store modified dataframe
@@ -131,21 +141,16 @@ class ParameterGenerator():
         forecast = pickle.load(open(self._paths['forecast_data'], 'rb'))
         forecast = utils.process_forecast(forecast)
 
-        try: # first, find forecast dates within the date range desired
-            forecast_dates = forecast.index
-        except KeyError:
-            print("Requested dates are not within range of available data!")
-
         # load heights and pressures
         p_and_h = pickle.load(open(self._paths['p_and_h'], 'rb'))
         src = 'ecmwf' if len(forecast['u'].iat[0]) > 50 else 'noaa'
-        # reverse to match forecast data order, convert to m
-        h = np.array([h/1000 for h in p_and_h[src]['h'][::-1]])
-
-        # find lower gl cutoff:
+        
+        # reverse (input was in reverse height order), convert from m to km
+        h = p_and_h[src]['h'][::-1] / 1000
+        # find lower gl cutoff (h is sorted due to previous line)
         where_h0 = np.searchsorted(h, self.h0)
         # free atm ends at high altitude
-        where_end = np.searchsorted(h, self.h0 + 23)
+        where_end = np.searchsorted(h, self._h_atm_end)
 
         if use_telemetry:
             raw_telemetry = pickle.load(open(self._paths['telemetry'], 'rb'))
@@ -179,7 +184,7 @@ class ParameterGenerator():
         self.data_fa = forecast
 
         # ground layer ends at ~1km above telescope, save for later 
-        self.fa_start = np.searchsorted(self.h, self.h0 + 0.8)
+        self.fa_start = np.searchsorted(self.h, self.h0 + self.gl_height)
         
     def get_measurements(self, pt):
         """Get a matched set of measurements from datapoint with index ``pt``.
@@ -241,7 +246,7 @@ class ParameterGenerator():
                                                   self.p,
                                                   h_out * 1000,
                                                   s=s)
-        out['phi'] = utils.smooth_dir(utils.to_direction(out['v'], out['u']))
+        out['phi'] = utils.smooth_dir(utils.to_direction(out['u'], out['v']))
         out['speed'] = np.hypot(out['u'], out['v'])
         out['h'] = h_out
 
@@ -266,8 +271,13 @@ class ParameterGenerator():
 
         """
         # pick out relevant wind data
-        fa = dict(self.data_fa.loc[pt])
-
+        try:
+            fa = dict(self.data_fa.loc[pt])
+        except KeyError:
+            if type(pt) == str:
+                raise TypeError(f'pt type must be pd.Timestamp not str!')
+            if type(pt) == pd.Timestamp:
+                raise KeyError(f'{pt} not found in data index!')
         # only calculate Cn2 with this model starting at FA start
         h_complete = np.linspace(self.h[self.fa_start], max(self.h), 500)
         inputs = self._interpolate(fa, h_complete)
