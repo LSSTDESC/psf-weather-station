@@ -4,16 +4,18 @@ import numpy as np
 import pandas as pd
 
 
-def dict_test_helper(test_dict, p_list):
-    """Test that test_dict contains all p_list keys, check lengths all equal."""
-    # select first key in p_list to use for length checking
-    x = p_list[0]
+def dict_test_helper(thing, p_list, x):
+    """Test whether all keys in p_list exist in p_list and checks lengths."""
+    # this loop starts with testing x for later comparison
+    np.testing.assert_equal(x in thing.keys(), True,
+                                err_msg=f'{x} not in dict!')
     for param in p_list:
-        # test that this parameter is in test_dict
-        assert param in test_dict.keys(), f'{param} not in dict!'
-        # test that parameter length matches that of x
-        assert len(test_dict[param]) == len(test_dict[x]), \
-        "Parameter lengths don't match!"
+        if param != x:
+            # test that this parameter is in dict thing
+            np.testing.assert_equal(param in thing.keys(), True,
+                                    err_msg=f'{param} not in dict!')
+            np.testing.assert_equal(len(thing[param]), len(thing[x]),
+                                    err_msg="Parameter lengths don't match!")
 
 
 def test_init():
@@ -25,16 +27,18 @@ def test_init():
                                   err_msg='Error in dates of GL and FA!')
 
     # do the dataframes contain the correct column names? 
-    assert set(p.data_gl.columns) == set(['u', 'v', 't', 'speed', 'phi']), \
-    'Error in GL data columns!'
-    
-    assert set(p.data_fa.columns) == set(['u', 'v', 't', 'speed', 'phi']), \
-    'Error in FA data columns!'
-    
+    np.testing.assert_equal(set(p.data_gl.columns),
+                            set(['u', 'v', 't', 'speed', 'phi']),
+                            err_msg='Error in GL data columns!')
+
+    np.testing.assert_equal(set(p.data_fa.columns),
+                            set(['u', 'v', 't', 'speed', 'phi']),
+                            err_msg='Error in FA data columns!')
+
     # do the FA parameter and height arrays have the same length?
-    assert len(p.data_fa.iat[0,0]) == len(p.h), \
-    'Mismatched length of FA, height arrays!'
-    
+    np.testing.assert_equal(len(p.data_fa.iat[0,0]), len(p.h),
+                            err_msg='Mismatched length of FA, height arrays!')
+
     # making sure h0 is not in h, and FA start is in h
     np.testing.assert_equal([p.h0 in p.h, p.h[p.fa_start] in p.h],
                             [False, True],
@@ -50,7 +54,7 @@ def test_init():
     # one point per quadrant of the UV plane
     u = [-10,20,15,-8]
     v = [-5,-7,10,2]
-    theta_true = [63.43494, 289.29004, 236.30993, 104.03624]
+    theta_true = [26.56505, 160.70995, 213.69007, 345.96376]
     theta_test = psfws.utils.to_direction(u, v)
     np.testing.assert_allclose(theta_test, theta_true, atol=.0001,
                                err_msg='Error in wind direction conversion!')
@@ -64,7 +68,7 @@ def test_params():
     # test get_raw_measurements()
     m_dict = p.get_measurements(pt)
     m_names = ['u', 'v', 'speed', 't', 'h', 'phi']
-    dict_test_helper(m_dict, m_names)
+    dict_test_helper(m_dict, m_names, 'h')
 
     # check error catching in get_raw_measurements()
     # for example, a string input format should raise TypeError
@@ -73,10 +77,11 @@ def test_params():
     np.testing.assert_raises(KeyError, p.get_measurements,
                              pd.Timestamp('19000420', tz='UTC'))
 
+
     # test get_parameters()
     p_dict = p.get_parameters(pt)
     p_names = ['h', 'u', 'v', 'speed', 't', 'phi', 'j']
-    dict_test_helper(p_dict, p_names)
+    dict_test_helper(p_dict, p_names, 'h')
 
     
 def test_interp():
@@ -139,13 +144,13 @@ def test_zenith():
     # altitude and seeing vs zenith?
     # check by varying zenith, d_los and j vary as expected, ie ~ sec(zenith)
     d_los, j = [], []
-    for alt in [90,80,70,60]:
+    for az in [90,80,70,60]:
         params = {'u':[-10], 'v':[5], 'h':[2.1], 'edges': [1,3], 'j':[1e-13]}
-        p_sky = psfws.utils.convert_to_galsim(params, alt, 60)
+        p_sky = psfws.utils.convert_to_galsim(params, 60, az)
         d_los.append(p_sky['h'][0])
         j.append(p_sky['j'][0])
 
-    # values of sec(zenith) for zenith = 90-alt
+    # values of sec(zenith) for zenith = 90-az
     sec_vals = np.array([1, 1.01542661, 1.06417777, 1.15470054])
     
     np.testing.assert_allclose(np.array(d_los), 2.1 * sec_vals)
