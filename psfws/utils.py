@@ -5,9 +5,16 @@ import pandas as pd
 from scipy.interpolate import UnivariateSpline, make_interp_spline
 from scipy.integrate import trapz
 import scipy.stats
+import os
 
+def get_data_path():
+    # set up path to data directory
+    psfws_dir = os.path.split(os.path.realpath(__file__))[0]
+    install_dir = os.path.split(psfws_dir)[0]
+    data_dir = os.path.join(install_dir, 'psfws', 'data')
+    return data_dir
 
-def convert_to_galsim(params, alt, az, lat=30.2446, lon=70.7494):
+def convert_to_galsim(params, alt, az, lat=-30.2446, lon=-70.7494):
     """Convert parameter vector params to coordinates used by GalSim."""
     # rotate wind vector:
     obs_nez, sky_nez = get_both_nez(alt, az, lat, lon)
@@ -22,10 +29,10 @@ def convert_to_galsim(params, alt, az, lat=30.2446, lon=70.7494):
     # modify params: 
     params['v'], params['u'] = sky_v, sky_u
     params['speed'] = np.hypot(sky_v, sky_u)
-    params['phi'] = to_direction(sky_v, sky_u)
+    params['phi'] = to_direction(sky_u, sky_v)
 
     # use zenith angle to modify altitudes to LOS distances
-    sec_zenith = 1 / np.cos(np.radians(90 - az))
+    sec_zenith = 1 / np.cos(np.radians(90 - alt))
     params['h'] = [h * sec_zenith for h in params['h']]
     params['edges'] = [h * sec_zenith for h in params['edges']]
 
@@ -50,35 +57,30 @@ def get_both_nez(alt, az, lat, lon):
     """Get N, E, zenith unit vectors for observing position alt,az from lat,lon.
     
     Notes:
-    - az = 0 means North, 90 means East; alt = 0 means horizon, 90 means zenith
-    - Rodrigues' rotation formula 
-      (https://en.wikipedia.org/wiki/Rodrigues'_rotation_formula) reduces to: 
-          v1 = zenith cos(th) - north sin(th) + 0,
-      with v = boresight, k = east, th = -(90 - alt), ie for rot about zenith.
+    - az = 0 means North, 90 means East
+    - alt = 0 means horizon, 90 means zenith
     """
     # convert everything to radians
-    lat = -np.deg2rad(lat)
-    lon = -np.deg2rad(lon)
+    lat = np.deg2rad(lat)
+    lon = np.deg2rad(lon)
     alt = np.deg2rad(alt)
     az = np.deg2rad(az)
     
     # compute n/e/z vectors of observatory
-    obs_nez = get_obs_nez(lat,lon)
+    N, E, Z = get_obs_nez(lat,lon)
 
-    # rotate z by zenith then azimuth to get boresight in direction of pointing
-    th = -(np.pi/2 - alt)
-    v1 = obs_nez[2] * np.cos(th) - obs_nez[0] * np.sin(th)
-    boresight = v1 * np.cos(-az) + np.cross(obs_nez[2], v1) * np.sin(-az) \
-                + obs_nez[2] * np.dot(obs_nez[2], v1) * (1 - np.cos(-az))
+    # find compass direction the telescope points to
+    compass_dir = N * np.cos(az) + E * np.sin(az)
+    # lift this from horizon by altitude angle
+    boresight = Z * np.sin(alt) + compass_dir * np.cos(alt)
 
-    # compute n/e/z vectors on "the sky"
-    lon = np.arctan2(boresight[1], boresight[0])
-    lat = np.arcsin(boresight[2])  # assume boresight is normalized
-    north = np.array([-np.cos(lon)*np.sin(lat), -np.sin(lon)*np.sin(lat), np.cos(lat)])
-    # East = North x boresight
-    east = np.cross(north, boresight)
-    
-    return obs_nez, np.array([north, east, boresight])
+    # in our coordinates, (0,0,1) points to the north celestial pole (ncp)
+    ncp = np.array([0,0,1])
+    east = np.cross(ncp, boresight)
+    east /= np.sqrt(np.dot(east, east))  # normalized
+    north = np.cross(boresight, east)
+
+    return np.array([N,E,Z]), np.array([north, east, boresight])
 
 def lognorm(sigma, scale):
     """Return a scipy stats lognorm defined by parameters sigma and scale.
@@ -113,28 +115,29 @@ def correlate_marginals(X, y, rho, rng):
     swp_window = (y_srtd[-1]-y_srtd[0]) / 15
     N = len(y)
 
-    # loop ten times over the dataset
+    # loop a hundred times over the dataset
     for i in range(100 * N):
         # index of the first pair in a swap
         i_first = i % N
         # find list of points within the swap_window of this first point
-        valid_indices = np.argwhere(abs(y_srtd - y_srtd[i_first]) < swp_window)
-        # randomly chose one of these as the swap pair
+        valid_indices, = np.where(abs(y_srtd - y_srtd[i_first]) < swp_window)
+        # randomly choose one of these as the swap pair
         i_swp = rng.choice(valid_indices.flatten())
         # swap entries
         y_srtd[i_first], y_srtd[i_swp] = y_srtd[i_swp], y_srtd[i_first]
 
-        if np.corrcoef(X['speed'], y_srtd)[0][1] < rho:
-            break
+        if np.corrcoef(X['speed'], y_srtd)[0][1] <= rho:
+            # add y to the dataframe X as a new column
+            try:
+                X.insert(loc=2, column='j_gl', value=y_srtd)
+            except ValueError:
+                print('turbulence column already exists. Check!')
 
-    if np.corrcoef(X['speed'], y_srtd)[0][1] > rho:
+            # task accomplished, we can leave now
+            break
+    else: 
+        # break never executed, so corr coeff > rho
         raise ValueError('did not reach desired correlation coefficient!')
-    else:
-        # add y to the dataframe X as a newcolumn
-        try:
-            X.insert(loc=2, column='j_gl', value=y_srtd)
-        except ValueError:
-            print('turbulence column already exists. Check!')
 
     # return dataframe which now contains the joint PDF
     return X
@@ -162,9 +165,14 @@ def process_telemetry(telemetry):
             't': tel_temp.loc[temp_mask] + 273.15}
 
 
-def to_direction(x, y):
-    """Return wind direction, in degrees, from u,v components of velocity."""
-    d = np.arctan2(y, x) * (180/np.pi)
+def to_direction(u, v):
+    """Return wind direction, in degrees, from u,v components of velocity.
+
+    (u,v) are components of wind speed toward east, north respectively.
+    """
+    # d is angle east of north
+    d = np.arctan2(u, v) * (180/np.pi)
+    # convention is direction wind comes *from* rather than blows *to*: add 180.
     return (d + 180) % 360
 
 
@@ -191,7 +199,7 @@ def process_forecast(df):
     df['speed'] = [np.hypot(df['u'].values[i], df['v'].values[i])
                    for i in range(n)]
 
-    df['phi'] = [to_direction(df['v'].values[i], df['u'].values[i])
+    df['phi'] = [to_direction(df['u'].values[i], df['v'].values[i])
                  for i in range(n)]
 
     if 'p' in df.columns:
@@ -289,7 +297,21 @@ def interpolate(x, y, new_x, ddz=True, s=0):
 
 
 def osborn(inputs):
-    """Calculate Cn2 model from Osborn et al 2018."""
+    """Calculate Cn2 model from Osborn et al 2018.
+
+    ADS link to paper: https://ui.adsabs.harvard.edu/abs/2018MNRAS.480.1278O
+    Up to a constant calibration factor, the Osborn model is:
+        Cn2(z) = (80e-6 * P(z) / (T(z) * Theta(z)))**2 
+                 * L(z)**(4/3) 
+                 * Theta'(z)**2
+    Where:
+    - P(z), T(z) are the pressure and temperature profiles
+    - Theta(z), Theta'(z) are the potential temperature profile and gradient 
+    - L(z) is a length scale of energy input, linked empirically to the 
+      turbulent kinetic energy parameterized by wind shears u'(z), v'(z):
+        E = u'(z)**2 + v'(z)**2;
+        L(z) = (2 * E * Theta(z) / (g * Theta'(z)))**(1/2)
+    """
     g = 9.8
 
     # theta and d/dz(theta)
@@ -297,6 +319,8 @@ def osborn(inputs):
 
     # wind shear => caclulate L(h)
     windshear = inputs['dudz']**2 + inputs['dvdz']**2
+    # Absolute value to smooth the occasional numerical issue which causes a 
+    # negative Theta'(z) -- in the FA regime, it should always be positive.
     lz = np.sqrt(2*thetaz / g * windshear / abs(dthetaz))
 
     numerator = 80e-6 * inputs['p'] * dthetaz
@@ -306,7 +330,15 @@ def osborn(inputs):
 
 
 def osborn_theta(inputs):
-    """Calculate potential temperature theta and its derivative."""
+    """Calculate potential temperature theta and its derivative.
+
+    Theta is the potential temperature:
+        Theta(z) = T(z) * (P0 / P(z))**(R/cp)
+    
+    - R is the gas constant of air and cp is the specfic heat capacity at 
+      constant P, the ratio is R/cp = 0.286 for air.
+    - P0 is the pressure 
+    """
     Rcp = 0.286
     P0 = 1000 * 100  # mbar to Pa
 
@@ -325,8 +357,8 @@ def integrate_in_bins(cn2, h, edges):
     Parameters:
     -----------
     cn2 : array, values of cn2
-    h : array, altitudes of input cn2 values
-    edges: array, edges of integration regions
+    h : array, altitudes of input cn2 values in km
+    edges: array, edges of integration regions in km
 
     Returns:
     -------
@@ -334,17 +366,21 @@ def integrate_in_bins(cn2, h, edges):
 
     """
     # make an equally spaced sampling in h across whole range:
-    h_samples = np.linspace(edges[0] * 1000, edges[-1] * 1000, 1000)
+    h_samples = np.linspace(edges[0], edges[-1], 1000)
 
     J = []
     for i in range(len(edges)-1):
         # find the h samples that are within the altitude range of integration
-        h_i = h_samples[(h_samples < edges[i+1] * 1000) &
-                        (h_samples > edges[i] * 1000)]
+        h_i = h_samples[(h_samples < edges[i+1]) &
+                        (h_samples > edges[i])]
         # get Cn2 interpolation at those values of h -- s=0 for no smoothing.
-        cn2_i = np.exp(interpolate(h * 1000, np.log(cn2), h_i, ddz=False, s=0))
+        cn2_i = np.exp(interpolate(h, np.log(cn2), h_i, ddz=False, s=0))
         # numerically integrate to find the J value for this bin
         J.append(trapz(cn2_i, h_i))
+    
+    # The dh we integrated over was in km, rather than m. Convert that now, so
+    # that J has units of m**(1/3) as desired
+    J = np.array(J) * 1000
 
     return J
 
