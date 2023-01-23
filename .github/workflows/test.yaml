@@ -31,9 +31,12 @@ jobs:
 
       - name: Test with pytest
         run:
-          pytest --cov=./ --cov-report=xml
+          pytest --cov=./psfws --cov-report=xml
 
       - name: upload coverage to Codecov
         uses: codecov/codecov-action@v3
         with:
-          path_to_write_report: ./coverage/codecov_report.txt
+          file: ./coverage.xml
+          flags: unittests
+          name: codecov-umbrella
+#           path_to_write_report: ./coverage/codecov_report.txt
