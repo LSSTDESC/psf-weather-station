@@ -1,4 +1,5 @@
 [![test](https://github.com/LSSTDESC/psf-weather-station/actions/workflows/test.yaml/badge.svg)](https://github.com/LSSTDESC/psf-weather-station/actions/workflows/test.yaml)
+[![codecov](https://codecov.io/gh/LSSTDESC/psf-weather-station/branch/master/graph/badge.svg?token=S8WZLZSRAW)](https://codecov.io/gh/LSSTDESC/psf-weather-station)
 
 # psf-weather-station
 Leverage weather forecasting data to produce realistically correlated wind and turbulence parameters for atmospheric point-spread function  (PSF) simulations.
