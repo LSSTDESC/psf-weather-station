@@ -152,9 +152,9 @@ def test_zenith():
     np.testing.assert_allclose(np.array(j), 1e-13 * sec_vals)
 
 
-if __name__ == '__main__':
-    test_init()
-    test_params()
-    test_interp()
-    test_coords()
-    test_zenith()
+# if __name__ == '__main__':
+#     test_init()
+#     test_params()
+#     test_interp()
+#     test_coords()
+#     test_zenith()
