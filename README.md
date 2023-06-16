@@ -83,7 +83,7 @@ The raw data files, after being processed and relevant information saved, are de
 The raw GFS data files, one per date/time containing all available columns, will automatically be erased once the desired data has been extracted so this should not take more than 60MB of disc space at any given time. 
 
 ### aside: installing pygrib
-Installing this package is not always easy, so for this reason it is not a dependency for most of `psf-weather-station`. 
+Installing `pygrib` is not always easy so it is not a dependency for most of `psf-weather-station`. 
 However, it is a requirement for using `get_noaa_data()` for the processing of GFS data files. 
 It is *not* required for ECMWF ERA5 downloads. 
 For installation of `pygrib`, I recommend using conda rather than pip:
