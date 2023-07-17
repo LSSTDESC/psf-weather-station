@@ -5,12 +5,122 @@ import pandas as pd
 import pickle
 import pathlib
 import os
+import compute_geopotential_on_ml as ecmwfUtil
 
 PKG_BASE = pathlib.Path(__file__).resolve().parents[0].absolute()
 PKG_DATA_DIR = pathlib.Path.joinpath(PKG_BASE, 'data/')
 
 
-def _download_ecmwf(m1, m2, lat, lon, save_path):
+def get_geometric_h(geopotential):
+    """Convert geopotential to geometric height."""
+    Rearth = 6.371e6  # in meters
+    g = 9.80665  # m/s^2
+    # geopotential height is relative to the geoid, where geoid is shape of
+    # spherical Earth due to gravity/etc
+    geopotential_h = geopotential / g
+    # geometric height is also relative to the geoid
+    geometric_h = Rearth * geopotential_h / (Rearth - geopotential_h)
+    return geometric_h
+
+
+def get_geopotential(idx, step, values):
+    """Compute z at half & full level for the given level, based on t/q/sp."""
+    # We want to integrate up into the atmosphere, starting at the
+    # ground so we start at the lowest level (highest number) and
+    # keep accumulating the height as we go.
+    # See the IFS documentation, part III
+    # For speed and file I/O, we perform the computations with
+    # numpy vectors instead of fieldsets.
+    # Modified from ecmwfUtil.production_step()
+    z_h = values['z']
+    hout = []
+    pout = []
+    for lev in sorted(values['levelist'], reverse=True):
+        try:
+            z_h, z_f, p = ecmwfUtil.compute_z_level(idx, lev, values, z_h)
+            hout.append(float(z_f))
+            pout.append(float(p))
+        except MissingLevelError as e:
+            print('%s [WARN] %s' % (sys.argv[0], e), file=sys.stderr)
+    return np.stack((get_geometric_h(np.array(hout)), np.array(pout)))
+
+
+def _height_download(date, lat, lon):
+    import cdsapi
+    cds = cdsapi.Client()
+    cds.retrieve('reanalysis-era5-complete', {
+                 'class': 'ea',
+                 'expver': '1',
+                 'stream': 'oper',
+                 'time': '04',  # this would have to be changed!
+                 'type': 'an',
+                 'grid': '0.25/0.25',
+                 'area': f"{lat}/{lon}/{lat}/{lon}",
+                 'date': date,
+                 'levelist': '1',  # Geopotential (z) and Logarithm of surface pressure (lnsp) are 2D fields, archived as model level 1
+                 'levtype': 'ml',
+                 'param': '129/152',  # Geopotential (z) and Logarithm of surface pressure (lnsp)
+                 }, 'zlnsp_ml.grib')
+
+    cds.retrieve('reanalysis-era5-complete', {
+                  'class': 'ea',
+                  'date': date,
+                  'area': f"{lat}/{lon}/{lat}/{lon}",  # N/W/S/E bounds
+                  'expver': '1',
+                  'levelist': '37/to/137',  # don't need high altitude levels
+                  'levtype': 'ml',  # model level outputs (finely sampled in h)
+                  'param': '130/133',  # codes for temp, specific humidity
+                  'stream': 'oper',
+                  'time': '04',  # output times to download # this would have to be changed!
+                  'type': 'an',  # 'an' for analysis
+                  'grid': '0.25/0.25',  # need this to get lat/lon outputs!!
+                  'format': 'grib',  # output file format
+                  }, 'tq_ml.grib')
+
+
+def geopotential_on_ml(date, lat, lon, grib_dir, levelist='37/to/137', output='ph_{}_{}.csv'):
+    """Download data and calculate geometric height array for this location."""
+    # Main function from ecmwfUtil.main()
+    import eccodes
+    date = date[:4]+'-'+date[4:6]+'-'+date[6:]
+
+    zsp_path = pathlib.Path.joinpath(grib_dir, 'zlnsp_ml.grib')
+    tq_path = pathlib.Path.joinpath(grib_dir, 'tq_ml.grib')
+    if not zsp_path.exists() or not tq_path.exists():
+        _height_download(date, lat, lon)
+
+    if levelist == 'all':
+        levelist = range(1, 138)
+    else:
+        levels = levelist.split('/')
+        levelist = list(range(int(levels[0]), int(levels[2]) + 1))
+
+    index_keys = ['date', 'time', 'shortName', 'level', 'step']
+
+    idx = eccodes.codes_index_new_from_file('zlnsp_ml.grib', index_keys)
+    eccodes.codes_index_add_file(idx, 'tq_ml.grib')
+    values = None
+
+    # iterate date
+    for date in eccodes.codes_index_get(idx, 'date'):
+        eccodes.codes_index_select(idx, 'date', date)
+        # iterate time
+        for time in eccodes.codes_index_get(idx, 'time'):
+            eccodes.codes_index_select(idx, 'time', time)
+            for step in eccodes.codes_index_get(idx, 'step'):
+                eccodes.codes_index_select(idx, 'step', step)
+                if not values:
+                    values = ecmwfUtil.get_initial_values(idx, keep_sample=True)
+                values['levelist'] = levelist
+                values['sp'] = ecmwfUtil.get_surface_pressure(idx)
+                out = get_geopotential(idx, step, values)
+                break
+            break
+        break  # break statements because we only need z for one date/time
+    np.savetxt(output.format(lat, lon), out)
+
+
+def _download_ecmwf(times, m1, m2, lat, lon, save_path):
     """Download ECMWF model level data.
 
     Parameters
@@ -26,7 +136,7 @@ def _download_ecmwf(m1, m2, lat, lon, save_path):
     save_path : str
         path to file to save the downloaded info, should be in .grib format.
 
-    Notes: 
+    Notes:
     - best practice is to query month by month, so this function is inteded to
       be called >1 times if the desired date range spans multiple months.
     """
@@ -38,20 +148,19 @@ def _download_ecmwf(m1, m2, lat, lon, save_path):
     assert lat_lon_check == 0, "Lat, lon must be rounded to nearest 0.25 deg!"
 
     cds.retrieve('reanalysis-era5-complete', {
+                  'class': 'ea',
+                  'date': f"{m1}/to/{m2}",
+                  'area': f"{lat}/{lon}/{lat}/{lon}",  # N/W/S/E bounds
+                  'expver': '1',
+                  'levelist': '37/to/137',  # don't need high altitude levels
+                  'levtype': 'ml',  # model level outputs (finely sampled in h)
+                  'param': '130/131/132'+p,  # codes for temp, wind u/v
+                  'stream': 'oper',
+                  'time': times,  # output times to download # this would have to be changed!
                   'type': 'an',  # 'an' for analysis
                   'grid': '0.25/0.25',  # need this to get lat/lon outputs!!
-                  'area': f"{lat}/{lon}/{lat}/{lon}",  # N/W/S/E bounds
-                  'time': '00/06/12/18',  # output times to download
-                  'date': f"{m1}/to/{m2}",
-                  'class': 'ea',
-                  'param': '130/131/132',  # codes for temp, wind speed comps
-                  'expver': '1',
                   'format': 'grib',  # output file format
-                  'stream': 'oper',
-                  'levtype': 'ml',  # model level outputs (finely sampled in h)
-                  'levelist': '37/to/137',  # don't need high altitude levels
                   }, save_path)
-
     return
 
 
@@ -104,8 +213,8 @@ def _get_iter_dates(start_date, end_date):
         dates = _get_iter_months(d1, y1_end) + _get_iter_months(y2_start, d2)
     # otherwise, iterate through years and get the months from _get_iter_months
     else:
-        # iterate through the years in between d1 and d2 (inclusive) and 
-        # return all the resulting iter_month results. 
+        # iterate through the years in between d1 and d2 (inclusive) and
+        # return all the resulting iter_month results.
         y1_end = pd.Timestamp(year=d1.year, month=12, day=31)
         dates = [_get_iter_months(d1, y1_end)]
 
@@ -120,19 +229,50 @@ def _get_iter_dates(start_date, end_date):
     return dates
 
 
-def _process_grib(infile, t, u, v):
+def get_values(idx, step, levelist):
+    """Extract values from level."""
+    import eccodes
+    t, u, v = [], [], []
+    for lev in sorted(levelist, reverse=True):
+        eccodes.codes_index_select(idx, 'level', lev)
+        for short, outlist in zip(['t', 'u', 'v'], [t, u, v]):
+            try:
+                eccodes.codes_index_select(idx, 'shortName', short)
+                gid = eccodes.codes_new_from_index(idx)
+                outlist.append(float(eccodes.codes_get_values(gid)))
+                eccodes.codes_release(gid)
+            except MissingLevelError as e:
+                print('%s [WARN] %s' % (sys.argv[0], e), file=sys.stderr)
+    return {'t': t, 'u': u, 'v': v}
+
+
+def _process_grib(infile):
     """Open downloaded grib file, add data to t,u,v dicts."""
     import eccodes
-    with eccodes.GribFile(infile) as grib:
-        for msg in grib:
-            ts = pd.Timestamp(year=msg['year'], month=msg['month'],
-                              day=msg['day'],  hour=msg['hour'], tz='UTC')
-            for var, var_dict in zip(['T', 'U', 'V'], [t, u, v]):
-                if var in msg['name']:
-                    if ts in var_dict.keys():
-                        var_dict[ts].append(msg['values'])
-                    else:
-                        var_dict[ts] = [msg['values']]
+
+    index_keys = ['date', 'time', 'shortName', 'level', 'step']
+
+    idx = eccodes.codes_index_new_from_file(infile.as_posix(), index_keys)
+    values = None
+
+    all_out = []
+    # iterate date
+    for date in eccodes.codes_index_get(idx, 'date'):
+        eccodes.codes_index_select(idx, 'date', date)
+        # iterate time
+        for time in eccodes.codes_index_get(idx, 'time'):
+            eccodes.codes_index_select(idx, 'time', time)
+            for step in eccodes.codes_index_get(idx, 'step'):
+                eccodes.codes_index_select(idx, 'step', step)
+
+                out = get_values(idx, step, levelist=range(37, 138))
+                hour = time[0] if len(time) == 3 else time[:2]
+                ts = pd.Timestamp(year=int(date[:4]), month=int(date[4:6]),
+                                  day=int(date[6:]),  hour=int(hour), tz='UTC')
+                out['dt'] = ts
+                all_out.append(out)
+
+    return all_out
 
 
 def _delete_grib_file(file_path):
@@ -144,7 +284,7 @@ def _delete_grib_file(file_path):
         print("Error: %s : %s" % (file_path, e.strerror))
 
 
-def get_ecmwf_data(start_date, end_date, lat, lon, grib_dir=None, delete=False):
+def get_ecmwf_data(start_date, end_date, lat, lon, grib_dir=None, delete=False, need_z=False):
     """Download and process ECMWF forecast grib files to a pandas dataframe.
 
     Download ECMWF model level data, process the downloaded files, and save the
@@ -180,35 +320,38 @@ def get_ecmwf_data(start_date, end_date, lat, lon, grib_dir=None, delete=False):
 
     for m1, m2 in dates:
         grib_f = f_template.format(lat, lon,
-                                   m1.strftime('%Y-%m-%d'),
-                                   m2.strftime('%Y-%m-%d'))
+                                   m1.strftime('%Y%m%d'),
+                                   m2.strftime('%Y%m%d'))
         grib_path = pathlib.Path.joinpath(grib_dir, grib_f)
         # test if file exists
         if not grib_path.exists():
             # if not, download it!
-            _download_ecmwf(m1.strftime('%Y-%m-%d'), m2.strftime('%Y-%m-%d'),
-                            lat, lon, grib_path)
+            _download_ecmwf(m1.strftime('%Y-%m-%d'),
+                            m2.strftime('%Y-%m-%d'),
+                            lat, lon, grib_path, need_z)
 
-    t, u, v = {}, {}, {}
-
+    values_dict = []
     for m1, m2 in dates:
         # grib file name for each months data
         grib_f = f_template.format(lat, lon,
-                                   m1.strftime('%Y-%m-%d'),
-                                   m2.strftime('%Y-%m-%d'))
+                                   m1.strftime('%Y%m%d'),
+                                   m2.strftime('%Y%m%d'))
         grib_path = pathlib.Path.joinpath(grib_dir, grib_f)
-        _process_grib(grib_path, t, u, v)
+        values_dict = values_dict + _process_grib(grib_path)
 
         if delete:
             _delete_grib_file(grib_path)
 
-    timestamps = t.keys()
-    values_dict = [{'t': t[ts], 'u': u[ts], 'v':v[ts]} for ts in timestamps]
-    tuv_df = pd.DataFrame(values_dict, index=timestamps)
+    df = pd.DataFrame(values_dict).set_index('dt')
 
     save_file = f'ecmwf_{lat}_{lon}_{start_date}_{end_date}.p'
     save_path = pathlib.Path.joinpath(grib_dir, save_file)
-    pickle.dump(tuv_df, open(save_path, 'wb'))
+    pickle.dump(df, open(save_path, 'wb'))
+
+
+class MissingLevelError(Exception):
+    """Exception capturing missing levels in input."""
+    pass
 
 
 if __name__ == '__main__':
@@ -218,10 +361,12 @@ if __name__ == '__main__':
     parser.add_argument('-lon', type=float, default=-70.75)
     parser.add_argument('-d1', type=str, default='20190501')
     parser.add_argument('-d2', type=str, default='20190531')
+    parser.add_argument('-t', type=str, default='04/06/08')
     parser.add_argument('-grib_dir', type=str, default=None)
     parser.add_argument('--keep_grb', default=True, action='store_false')
+    parser.add_argument('--get_z', default=False, action='store_true')
     args = parser.parse_args()
-    
+
     # if no custom option defined, put the grib files in the data folder
     if args.grib_dir is None:
         grib_dir = PKG_DATA_DIR
@@ -231,9 +376,17 @@ if __name__ == '__main__':
     os.chdir(grib_dir)
 
     # call main function to execute the downloading/processing/saving
-    get_ecmwf_data(start_date=args.d1,
+    get_ecmwf_data(args.t,
+                   start_date=args.d1,
                    end_date=args.d2,
                    lat=args.lat,
                    lon=args.lon,
                    grib_dir=grib_dir,
-                   delete=args.keep_grb)
+                   delete=args.keep_grb,
+                   need_z=args.get_z)
+
+    if args.get_z:
+        geopotential_on_ml(args.d1, args.lat, args.lon, grib_dir=grib_dir)
+        if args.keep_grb:
+            _delete_grib_file(pathlib.Path.joinpath(grib_dir, 'zlnsp_ml.grib'))
+            _delete_grib_file(pathlib.Path.joinpath(grib_dir, 'tq_ml.grib'))
