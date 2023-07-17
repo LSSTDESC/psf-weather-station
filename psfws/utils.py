@@ -11,15 +11,15 @@ def convert_to_galsim(params, alt, az, lat=30.2446, lon=70.7494):
     """Convert parameter vector params to coordinates used by GalSim."""
     # rotate wind vector:
     obs_nez, sky_nez = get_both_nez(alt, az, lat, lon)
-    
+
     sky_v, sky_u = [], []
-    for v,u in zip(params['v'], params['u']):
+    for v, u in zip(params['v'], params['u']):
         obs_wind = v * obs_nez[0] + u * obs_nez[1]
         sky_wind = np.dot(sky_nez, obs_wind)
         sky_v.append(sky_wind[0])
         sky_u.append(sky_wind[1])
 
-    # modify params: 
+    # modify params:
     params['v'], params['u'] = sky_v, sky_u
     params['speed'] = np.hypot(sky_v, sky_u)
     params['phi'] = to_direction(sky_v, sky_u)
@@ -34,7 +34,7 @@ def convert_to_galsim(params, alt, az, lat=30.2446, lon=70.7494):
     return params
 
 
-def get_obs_nez(lat,lon):
+def get_obs_nez(lat, lon):
     """Get North, East, and zenith unit vectors for observatory at Earth lat,lon."""
     north = np.array([-np.cos(lon)*np.sin(lat),
                       -np.sin(lon)*np.sin(lat),
@@ -46,13 +46,14 @@ def get_obs_nez(lat,lon):
     # unit vectors along _rows_
     return np.array([north, east, zenith])
 
+
 def get_both_nez(alt, az, lat, lon):
     """Get N, E, zenith unit vectors for observing position alt,az from lat,lon.
-    
+
     Notes:
     - az = 0 means North, 90 means East; alt = 0 means horizon, 90 means zenith
-    - Rodrigues' rotation formula 
-      (https://en.wikipedia.org/wiki/Rodrigues'_rotation_formula) reduces to: 
+    - Rodrigues' rotation formula
+      (https://en.wikipedia.org/wiki/Rodrigues'_rotation_formula) reduces to:
           v1 = zenith cos(th) - north sin(th) + 0,
       with v = boresight, k = east, th = -(90 - alt), ie for rot about zenith.
     """
@@ -61,15 +62,15 @@ def get_both_nez(alt, az, lat, lon):
     lon = -np.deg2rad(lon)
     alt = np.deg2rad(alt)
     az = np.deg2rad(az)
-    
+
     # compute n/e/z vectors of observatory
-    obs_nez = get_obs_nez(lat,lon)
+    obs_nez = get_obs_nez(lat, lon)
 
     # rotate z by zenith then azimuth to get boresight in direction of pointing
     th = -(np.pi/2 - alt)
     v1 = obs_nez[2] * np.cos(th) - obs_nez[0] * np.sin(th)
-    boresight = v1 * np.cos(-az) + np.cross(obs_nez[2], v1) * np.sin(-az) \
-                + obs_nez[2] * np.dot(obs_nez[2], v1) * (1 - np.cos(-az))
+    boresight = v1 * np.cos(-az) + np.cross(obs_nez[2], v1) * np.sin(-az) + \
+                obs_nez[2] * np.dot(obs_nez[2], v1) * (1 - np.cos(-az))
 
     # compute n/e/z vectors on "the sky"
     lon = np.arctan2(boresight[1], boresight[0])
@@ -77,8 +78,9 @@ def get_both_nez(alt, az, lat, lon):
     north = np.array([-np.cos(lon)*np.sin(lat), -np.sin(lon)*np.sin(lat), np.cos(lat)])
     # East = North x boresight
     east = np.cross(north, boresight)
-    
+
     return obs_nez, np.array([north, east, boresight])
+
 
 def lognorm(sigma, scale):
     """Return a scipy stats lognorm defined by parameters sigma and scale.
@@ -144,7 +146,7 @@ def process_telemetry(telemetry):
     """Return masked telemetry measurements of speed/direction.
 
     Input and output are both dicts of pandas series of wind speeds/directions/
-    temperatures. Values in output masked for zeros and speeds > 40m/s. Keys in 
+    temperatures. Values in output masked for zeros and speeds > 40m/s. Keys in
     output are 'speed', 'phi', and 't'
     """
     tel_dir = telemetry['wind_direction']
@@ -176,17 +178,9 @@ def process_forecast(df):
              cols = ['u', 'v', 't', 'speed', 'phi']
 
     Processing steps:
-    - reverse u, v, and t altitudes
-    - filter daytime datapoints
     - add "speed" and "phi" columns
     """
-    not_daytime = df.index.hour != 12
-    df = df.iloc[not_daytime].copy()
     n = len(df)
-
-    # reverse
-    for k in ['u', 'v', 't']:
-        df[k] = [df[k].values[i][::-1] for i in range(n)]
 
     df['speed'] = [np.hypot(df['u'].values[i], df['v'].values[i])
                    for i in range(n)]
@@ -246,7 +240,7 @@ def match_telemetry(telemetry, forecast_dates):
     matched_t = [np.median(temp.loc[temp_ids[i]])
                  for i in range(n) if i in ids_to_keep]
 
-    # calculate velocity componenents from the matched speed/directions    
+    # calculate velocity componenents from the matched speed/directions
     v = np.array(matched_s) * np.cos((np.array(matched_d) - 180) * np.pi/180)
     u = np.array(matched_s) * np.sin((np.array(matched_d) - 180) * np.pi/180)
 
@@ -308,7 +302,7 @@ def osborn(inputs):
 def osborn_theta(inputs):
     """Calculate potential temperature theta and its derivative."""
     Rcp = 0.286
-    P0 = 1000 * 100  # mbar to Pa
+    P0 = 1000 * 100  # mbar aka hPa
 
     theta = inputs['t'] * (P0 / inputs['p'])**Rcp
 

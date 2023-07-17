@@ -82,19 +82,19 @@ class ParameterGenerator():
 
     """
 
-    def __init__(self, seed=None, h_tel=2.715, rho_jv=0,
-                 turbulence={'gl':{'s':0.62,'scale':2.34},'fa':{'s':0.84,'scale':1.51}},
+    def __init__(self, seed=None, h_tel=2.715, rho_jv=0, turbulence=None,
                  forecast_file='data/ecmwf_-30.25_-70.75_20190501_20191031.p',
                  telemetry_file='data/tel_dict_CP_20190501-20191101.pkl'):
         # set up the paths to data files, and check they exist.
         psfws_base = pathlib.Path(__file__).parents[0].absolute()
 
+        lat, lon = forecast_file.split('_')[1:3]
         self._paths = \
             {'forecast_data': pathlib.Path.joinpath(psfws_base, forecast_file),
-             'p_and_h': pathlib.Path.joinpath(psfws_base, 'data/p_and_h.p')}
+             'alts': pathlib.Path.joinpath(psfws_base, f'data/ph_{lat}_{lon}.csv')}
 
         if telemetry_file is not None:
-            self._paths['telemetry'] = pathlib.Path.joinpath(psfws_base, 
+            self._paths['telemetry'] = pathlib.Path.joinpath(psfws_base,
                                                              telemetry_file)
             use_telemetry = True
         else:
@@ -105,8 +105,12 @@ class ParameterGenerator():
                 print(f'code running from: {psfws_base}')
                 raise FileNotFoundError(f'file {file_path} not found!')
 
+        if turbulence is None:
+            turbulence = {'gl': {'s': 0.62, 'scale': 2.34},
+                          'fa': {'s': 0.84, 'scale': 1.51}}
+
         # set ground altitude, turbulence pdf, and j/wind correlation
-        self.h0 = h_tel 
+        self.h0 = h_tel
         self.j_pdf = {k: utils.lognorm(v['s'], v['scale']) for k, v in turbulence.items()}
         self.rho_jv = rho_jv
 
@@ -131,16 +135,15 @@ class ParameterGenerator():
         forecast = pickle.load(open(self._paths['forecast_data'], 'rb'))
         forecast = utils.process_forecast(forecast)
 
-        try: # first, find forecast dates within the date range desired
+        try:  # first, find forecast dates within the date range desired
             forecast_dates = forecast.index
         except KeyError:
             print("Requested dates are not within range of available data!")
 
         # load heights and pressures
-        p_and_h = pickle.load(open(self._paths['p_and_h'], 'rb'))
-        src = 'ecmwf' if len(forecast['u'].iat[0]) > 50 else 'noaa'
-        # reverse to match forecast data order, convert to m
-        h = np.array([h/1000 for h in p_and_h[src]['h'][::-1]])
+        alts = np.loadtxt(self._paths['alts'].as_posix())
+        # convert to m
+        h = np.array(alts[0]) / 1000
 
         # find lower gl cutoff:
         where_h0 = np.searchsorted(h, self.h0)
@@ -161,26 +164,26 @@ class ParameterGenerator():
             # interpolate forecasts to bit above GL (by ~weather tower height)
             gl = {}
             for k in ['u', 'v', 't', 'speed', 'phi']:
-                gl[k] = np.array([utils.interpolate(h, f, 
-                                                    self.h0 + .05, ddz=False) 
+                gl[k] = np.array([utils.interpolate(h, f,
+                                                    self.h0 + .05, ddz=False)
                                   for f in forecast.loc[k].values])
             self.data_gl = pd.DataFrame(data=gl, index=forecast.index)
-        
+
         # how many datapoints we have now after selections
         self.N = len(forecast)
 
         # save all forecast data only between ground and upper bound
         self.h = h[where_h0:where_end]
-        self.p = p_and_h[src]['p'][::-1][where_h0:where_end]
+        self.p = np.array(alts[1])[where_h0:where_end]
 
         for k in ['u', 'v', 't', 'speed', 'phi']:
-            forecast[k] = [forecast[k].values[i][where_h0:where_end] 
+            forecast[k] = [forecast[k].values[i][where_h0:where_end]
                            for i in range(self.N)]
         self.data_fa = forecast
 
-        # ground layer ends at ~1km above telescope, save for later 
+        # ground layer ends at ~1km above telescope, save for later
         self.fa_start = np.searchsorted(self.h, self.h0 + 0.8)
-        
+
     def get_measurements(self, pt):
         """Get a matched set of measurements from datapoint with index ``pt``.
 
@@ -189,7 +192,7 @@ class ParameterGenerator():
 
         Returns:
             params: Dictionary of wind and temperature measurements, made of
-                    matched ground level and free atmosphere data, at Index 
+                    matched ground level and free atmosphere data, at Index
                     location ``pt``. Keys are [``u``, ``v``, ``speed``, ``phi``,
                     ``t``, ``h``] (see class Attributes for details).
         """
@@ -218,7 +221,7 @@ class ParameterGenerator():
             # 100km would be an outrageously high altitude, probably unit error
             raise ValueError('Units of h should be in km, not m.')
         if min(h_out) < min(self.h) or max(h_out) > max(self.h):
-            raise ValueError(f"Can't interpolate below {min(self.h)}" + \
+            raise ValueError(f"Can't interpolate below {min(self.h)}" +
                              f" or above {max(self.h)}.")
 
         # if 'h' in the dictionary, use those heights
@@ -304,13 +307,13 @@ class ParameterGenerator():
         fa_layers = [h_operation(h_km[i*b:(i+1)*b], cn2[i*b:(i+1)*b])
                      for i in range(nl - 1)]
         fa_j_uncal = utils.integrate_in_bins(cn2, h_km, np.array(fa_edges))
-        
+
         # draw Gl and FA total turbulence integral values from PDFs:
         j_fa, j_gl = self._draw_j(pt=pt)
 
         # total FA value scales the FA weights from integrated Osborn model
         fa_j_cal = [w * j_fa / np.sum(fa_j_uncal) for w in fa_j_uncal]
-        
+
         # return integrated turbulence and layer information
         return (np.array([j_gl] + fa_j_cal),
                 np.array([self.h0] + fa_layers),
@@ -319,7 +322,7 @@ class ParameterGenerator():
     def get_parameters(self, pt, nl=8, s=0, location='mean', skycoord=False,
                        alt=None, az=None, lat=30.2446, lon=70.7494):
         """Get parameters from dataset ``pt`` for a set of atmospheric layers.
-        
+
         Returns a dictionary of wind and turbulence parameter dict for ``nl``
         layers, located at altitudes``h`` and with boundaries ``edges``. Each
         atmospheric layer has a turbulence weight ``j`` and wind parameters
@@ -330,13 +333,13 @@ class ParameterGenerator():
         Parameters:
             pt:         Pandas Timestamp of date/time for desired output.
             nl:         Number of output layers desired. [default: 8]
-            s:          Smoothing factor for scipy interpolate. Use 0 for 
-                        perfect interpolation, or None for scipy's' best 
+            s:          Smoothing factor for scipy interpolate. Use 0 for
+                        perfect interpolation, or None for scipy's' best
                         estimate. [default: 0]
             location:   Method for setting centroid of layer, must be one of
                         (``mean``, ``com``). [default: ``mean``]
             skycoord:   Whether to return parameters in sky coordinates (e.g. if
-                        using GalSim, select True). If False, parameters are 
+                        using GalSim, select True). If False, parameters are
                         returned in local north/east coordinates. If True,
                         values of alt/az must be given. [default: False]
             alt, az:    Altitude and azimuth of telescope pointing. [default:
@@ -366,14 +369,14 @@ class ParameterGenerator():
         params['j'] = j
         params['edges'] = h_edges
 
-        if skycoord == True:
+        if skycoord:
             params = utils.convert_to_galsim(params, alt, az, lat, lon)
         return params
 
     def draw_datapoint(self):
         """Draw a random datapoint from the dataset and return index."""
         return self._rng.choice(self.data_fa.index)
-        
+
     def draw_parameters(self, nl=8, s=0, location='mean'):
         """Draw a random datapoint from the dataset, and return parameters.
 
@@ -382,4 +385,3 @@ class ParameterGenerator():
         """
         pt = self.draw_datapoint()
         return self.get_parameters(pt=pt, nl=nl, s=s, location=location)
-
