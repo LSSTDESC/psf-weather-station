@@ -30,7 +30,7 @@ Note: for these to be included successfully, the telemetry should span the same 
 Code can currently be installed through github by running the following:
 
 ```
-git clone https://github.com/cahebert/psf-weather-station.git
+git clone https://github.com/LSSTDESC/psf-weather-station.git
 cd psf-weather-station
 python setup.py install
 ```
