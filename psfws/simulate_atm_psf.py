@@ -23,7 +23,8 @@ class AtmosphericPSF():
     A random realization of the atmosphere will be produced when this class is
     instantiated. Realistic weather parameters from psf-weather-station."""
     def __init__(self, alt, az, band, rng, boresight, exptime=30.0, t0=0.0, nlayers=6,
-                 kcrit=0.2, screen_scale=0.1, screen_size=800, save_file=None, logger=None):
+                 kcrit=0.2, screen_scale=0.1, screen_size=800, save_file=None, logger=None,
+                 field_x=None, field_y=None):
         self.boresight = boresight
         self.alt = alt
         self.az = az
@@ -229,7 +230,7 @@ class AtmLoader(InputLoader):
         return kwargs, safe
 
 
-def BuildImsimAtmosphericPSF(config, base, ignore, gsparams, logger):
+def BuildImsimAtmosphericPSF(config, base, ignore, logger=None, gsparams=None):
     """Build an AtmosphericPSF from the information in the config file.
 
     Built to interface with ImSim using OpSim inputs.
@@ -254,9 +255,15 @@ def BuildAtmosphericPSF(config, base, ignore, gsparams=None, logger=None):
     Version without input loading module for simpler sims.
     """
     config['rng'] = base['rng']
+    config['boresight'] = None
     rq = {'alt': float, 'az' : float , 'band' : str, 'rng': galsim.BaseDeviate}
-    op = {'field_x' : float, 'field_y' : float}
+    op = {'field_x' : float, 'field_y' : float, 't0' : float, 'exptime' : float,
+          'kcrit' : float, 'screen_size' : float, 'screen_scale' : float,
+          'boresight' : galsim.CelestialCoord}
     kwargs, _ = galsim.config.GetAllParams(config, base, req=rq, opt=op)
+    if gsparams: gsparams = GSParams(**gsparams)
+    else: gsparams = None
+
     atm = AtmosphericPSF(**kwargs)
     psf = atm.getPSF(galsim.PositionD(config['field_x'], config['field_y']), gsparams)
     return psf, False
