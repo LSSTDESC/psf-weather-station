@@ -1,0 +1,25 @@
+modules :
+  - psfws.simulate_atm_psf
+
+
+psf :
+  type : Convolution
+  items : 
+    - type : AtmosphericPSF
+      screen_size : 200
+      band : 'i'
+      alt : 60
+      az : 270
+      field_x : 20
+      field_y : 30 
+
+    - type : Gaussian
+      sigma : 0.35
+
+
+image : 
+  pixel_scale : 0.2
+  size : 50
+  draw_method : 'phot'
+  n_photons : 1000000
+  random_seed : 192476
