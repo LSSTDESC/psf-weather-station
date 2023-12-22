@@ -112,7 +112,7 @@ class AtmosphericPSF():
         )
 
         if self.logger:
-            self.logger.debug("airmass = {}".format(1 / np.cos(np.radians(90-self.alt))))
+            self.logger.debug("airmass = {}".format(1 / np.cos(np.pi/2-self.alt.rad)))
             self.logger.debug("wlen_eff = {}".format(self.wlen_eff))
             self.logger.debug("r0_500 = {}".format(r0_500))
             self.logger.debug("L0 = {}".format(L0))
@@ -145,7 +145,7 @@ class AtmosphericPSF():
         
         return params['speed'], directions, altitudes, params['j']
 
-    def getPSF(self, field_pos, gsparams):
+    def getPSF(self, field_pos, gsparams=None):
         """
         Return a PSF to be convolved with sources.
 
@@ -230,7 +230,7 @@ class AtmLoader(InputLoader):
         return kwargs, safe
 
 
-def BuildImsimAtmosphericPSF(config, base, ignore, logger=None, gsparams=None):
+def BuildImsimAtmosphericPSF(config, base, ignore, gsparams, logger):
     """Build an AtmosphericPSF from the information in the config file.
 
     Built to interface with ImSim using OpSim inputs.
@@ -239,7 +239,7 @@ def BuildImsimAtmosphericPSF(config, base, ignore, logger=None, gsparams=None):
     image_pos = base['image_pos']
     boresight = atm.boresight
     field_pos = base['wcs'].posToWorld(image_pos, project_center=boresight)
-    if gsparams: gsparams = GSParams(**gsparams)
+    if gsparams: gsparams = galsim.GSParams(**gsparams)
     else: gsparams = None
 
     #logger.debug("Making PSF for pos %s",image_pos)
@@ -249,7 +249,7 @@ def BuildImsimAtmosphericPSF(config, base, ignore, logger=None, gsparams=None):
     psf = atm.getPSF(field_pos, gsparams)
     return psf, False
 
-def BuildAtmosphericPSF(config, base, ignore, gsparams=None, logger=None):
+def BuildAtmosphericPSF(config, base, ignore, gsparams, logger):
     """Build an AtmosphericPSF from the information in the config file.
 
     Version without input loading module for simpler sims.
@@ -261,7 +261,7 @@ def BuildAtmosphericPSF(config, base, ignore, gsparams=None, logger=None):
           'kcrit' : float, 'screen_size' : float, 'screen_scale' : float,
           'boresight' : galsim.CelestialCoord}
     kwargs, _ = galsim.config.GetAllParams(config, base, req=rq, opt=op)
-    if gsparams: gsparams = GSParams(**gsparams)
+    if gsparams: gsparams = galsim.GSParams(**gsparams)
     else: gsparams = None
 
     atm = AtmosphericPSF(**kwargs)
