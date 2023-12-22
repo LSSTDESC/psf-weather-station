@@ -178,8 +178,8 @@ class AtmLoader(InputLoader):
 
         req_params = { 'band' : str,
                        'boresight' : galsim.CelestialCoord,
-                       'alt' : float,
-                       'az' : float
+                       'alt' : galsim.Angle,
+                       'az' : galsim.Angle
                      }
         opt_params = { 't0' : float,
                        'exptime' : float,
@@ -256,7 +256,7 @@ def BuildAtmosphericPSF(config, base, ignore, gsparams=None, logger=None):
     """
     config['rng'] = base['rng']
     config['boresight'] = None
-    rq = {'alt': float, 'az' : float , 'band' : str, 'rng': galsim.BaseDeviate}
+    rq = {'alt': galsim.Angle, 'az' : galsim.Angle , 'band' : str, 'rng': galsim.BaseDeviate}
     op = {'field_x' : float, 'field_y' : float, 't0' : float, 'exptime' : float,
           'kcrit' : float, 'screen_size' : float, 'screen_scale' : float,
           'boresight' : galsim.CelestialCoord}

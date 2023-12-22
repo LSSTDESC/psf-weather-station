@@ -32,7 +32,10 @@ def convert_to_galsim(params, alt, az, lat=-30.2446, lon=-70.7494):
     params['phi'] = to_direction(sky_u, sky_v)
 
     # use zenith angle to modify altitudes to LOS distances
-    sec_zenith = 1 / np.cos(np.radians(90 - alt))
+    try:
+        sec_zenith = 1 / np.cos(np.radians(90 - alt))
+    except TypeError:
+        sec_zenith = 1 / np.cos(np.pi/2 - alt.rad)
     params['h'] = [h * sec_zenith for h in params['h']]
     params['edges'] = [h * sec_zenith for h in params['edges']]
 
@@ -63,8 +66,13 @@ def get_both_nez(alt, az, lat, lon):
     # convert everything to radians
     lat = np.deg2rad(lat)
     lon = np.deg2rad(lon)
-    alt = np.deg2rad(alt)
-    az = np.deg2rad(az)
+    try:
+        # if alt/az were passed as galsim.Angle objects
+        alt = alt.rad
+        az = az.rad
+    except AttributeError:
+        alt = np.deg2rad(alt)
+        az = np.deg2rad(az)
     
     # compute n/e/z vectors of observatory
     N, E, Z = get_obs_nez(lat,lon)
