@@ -8,13 +8,14 @@ from galsim.config import InputLoader, RegisterInputType, RegisterObjectType
 from astropy.coordinates import AltAz, EarthLocation, SkyCoord
 import astropy.units as u
 
-# Based on: https://github.com/LSSTDESC/imSim/blob/main/imsim/atmPSF.py
+from scipy.optimize import bisect
+
+# Heavily based on: https://github.com/LSSTDESC/imSim/blob/main/imsim/atmPSF.py
 
 # For now:
 # - screen size set by user
 # - no multithreading
-# - get seeing from psfws r0 with fudge factor
-# - user chosen wavelength (monochromatic, no chromatic atmosphere)
+# - seeing calibrated to user provided value
 
 
 class AtmosphericPSF():
@@ -22,13 +23,16 @@ class AtmosphericPSF():
 
     A random realization of the atmosphere will be produced when this class is
     instantiated. Realistic weather parameters from psf-weather-station."""
-    def __init__(self, alt, az, band, rng, boresight, exptime=30.0, t0=0.0, nlayers=6,
-                 kcrit=0.2, screen_scale=0.1, screen_size=800, save_file=None, logger=None,
+    def __init__(self, alt, az, band, rng, boresight, rawSeeing, 
+                 exptime=30.0, t0=0.0, nlayers=6, screen_size=800, exponent=-0.3,
+                 kcrit=0.2, screen_scale=0.1, save_file=None, logger=None,
                  field_x=None, field_y=None):
         self.boresight = boresight
         self.alt = alt
         self.az = az
+        self.targetFWHM = rawSeeing
         self.logger = galsim.config.LoggerWrapper(logger)
+        self.exponent = exponent
 
         self.wlen_eff = dict(u=365.49, g=480.03, r=622.20, i=754.06, z=868.21, y=991.66)[band]
         # wlen_eff is from Table 2 of LSE-40 (y=y2)
@@ -84,13 +88,34 @@ class AtmosphericPSF():
         self.logger.debug("GSScreenShare keys = %s",list(galsim.phase_screens._GSScreenShare.keys()))
         self.logger.debug("id(self) = %s",id(self))
 
+    def _vkSeeing(self, r0_500, wavelength, L0):
+        # von Karman profile FWHM from fitting formula in eqn 19 of
+        # Tokovinin 2002, PASP, v114, p1156
+        # https://dx.doi.org/10.1086/342683
+        kolm_seeing = galsim.Kolmogorov(r0_500=r0_500, lam=wavelength).fwhm
+        r0 = r0_500 * (wavelength/500)**(6./5)
+        arg = 1. - 2.183*(r0/L0)**0.356
+        factor = np.sqrt(arg) if arg > 0.0 else 0.0
+        return kolm_seeing*factor
+
+    def _seeingResid(self, r0_500, wavelength, L0, targetSeeing):
+        return self._vkSeeing(r0_500, wavelength, L0) - targetSeeing
+
+    def _r0_500(self, wavelength, L0, targetSeeing):
+        """Returns r0_500 to use to get target seeing."""
+        r0_500_max = min(1.0, L0*(1./2.183)**(-0.356)*(wavelength/500.)**(6./5))
+        r0_500_min = 0.01
+        return bisect(
+            self._seeingResid,
+            r0_500_min,
+            r0_500_max,
+            args=(wavelength, L0, targetSeeing)
+        )
+    
     def _getAtmKwargs(self):
         """Get all atmospheric setup parameters."""
         # psf-weather-station params
         speeds, directions, altitudes, weights = self._get_psfws_params()
-
-        # associated r0 at 500nm for these turbulence weights
-        r0_500 = (2.914 * (500e-9)**(-2) * np.sum(weights))**(-3./5) / 5 # fudge factor of 1/5
 
         # Draw L0 from truncated log normal, broadcast to list of layers
         gd = galsim.GaussianDeviate(self.rng)
@@ -99,6 +124,10 @@ class AtmosphericPSF():
             L0 = np.exp(gd() * 0.6 + np.log(25.0))    
         L0 = [L0] * len(speeds)
 
+        # associated r0 at 500nm for these turbulence weights
+        r0_500 = self._r0_500(self.wlen_eff, L0[0], self.targetFWHM)
+#         r0_500 = (2.914 * (500e-9)**(-2) * np.sum(weights))**(-3./5) / 5 # fudge factor of 1/5
+
         atmKwargs = dict(
             r0_500=r0_500,
             L0=L0, 
@@ -106,7 +135,7 @@ class AtmosphericPSF():
             direction=directions,
             altitude=altitudes,
             r0_weights=weights,
-            screen_size=self.screen_size, #self._set_screen_size(speeds),
+            screen_size=self.screen_size, 
             screen_scale=self.screen_scale,
             rng=self.rng
         )
@@ -153,8 +182,17 @@ class AtmosphericPSF():
         """
         theta = (field_pos.x*galsim.arcsec, field_pos.y*galsim.arcsec)
 
-        psf = self.atm.makePSF(self.wlen_eff, aper=self.aper, theta=theta, t0=self.t0,
-                               exptime=self.exptime, gsparams=gsparams)
+        psf = galsim.ChromaticAtmosphere(
+                  self.atm.makePSF(self.wlen_eff, 
+                                   aper=self.aper, 
+                                   theta=theta, 
+                                   t0=self.t0,
+                                   exptime=self.exptime, 
+                                   gsparams=gsparams),
+                  alpha=self.exponent,
+                  base_wavelength=self.wlen_eff,
+                  zenith_angle=0*galsim.degrees
+              )
         return psf
 
 
@@ -176,18 +214,22 @@ class AtmLoader(InputLoader):
     def getKwargs(self, config, base, logger):
         logger.debug("Get kwargs for AtmosphericPSF")
 
-        req_params = { 'band' : str,
+        req_params = { 
+                       'band' : str,
                        'boresight' : galsim.CelestialCoord,
+                       'rawSeeing' : float,
                        'alt' : galsim.Angle,
                        'az' : galsim.Angle
                      }
-        opt_params = { 't0' : float,
+        opt_params = { 
+                       't0' : float,
                        'exptime' : float,
                        'kcrit' : float,
                        'screen_size' : float,
                        'screen_scale' : float,
                        'save_file' : str,
-                       'nlayers' : int
+                       'nlayers' : int,
+                       'exponent' : float
                      }
 
         # Temporary fix until GalSim 2.5 to make sure atm_psf can be built once and shared,
@@ -230,7 +272,7 @@ class AtmLoader(InputLoader):
         return kwargs, safe
 
 
-def BuildImsimAtmosphericPSF(config, base, ignore, gsparams, logger):
+def BuildPsfwsAtmosphericPSF(config, base, ignore, gsparams, logger):
     """Build an AtmosphericPSF from the information in the config file.
 
     Built to interface with ImSim using OpSim inputs.
@@ -257,8 +299,8 @@ def BuildAtmosphericPSF(config, base, ignore, gsparams, logger):
     config['rng'] = base['rng']
     config['boresight'] = None
     rq = {'alt': galsim.Angle, 'az' : galsim.Angle , 'band' : str, 'rng': galsim.BaseDeviate}
-    op = {'field_x' : float, 'field_y' : float, 't0' : float, 'exptime' : float,
-          'kcrit' : float, 'screen_size' : float, 'screen_scale' : float,
+    op = {'field_x' : float, 'field_y' : float, 't0' : float, 'exptime' : float, 'rawSeeing': float,
+          'kcrit' : float, 'screen_size' : float, 'screen_scale' : float, 'exponent' : float,
           'boresight' : galsim.CelestialCoord}
     kwargs, _ = galsim.config.GetAllParams(config, base, req=rq, opt=op)
     if gsparams: gsparams = galsim.GSParams(**gsparams)
@@ -269,6 +311,6 @@ def BuildAtmosphericPSF(config, base, ignore, gsparams, logger):
     return psf, False
 
 RegisterInputType('atm_psf', AtmLoader())
-RegisterObjectType('ImsimAtmosphericPSF', BuildImsimAtmosphericPSF, input_type='atm_psf')
+RegisterObjectType('PsfwsAtmosphericPSF', BuildPsfwsAtmosphericPSF, input_type='atm_psf')
 
 RegisterObjectType('AtmosphericPSF', BuildAtmosphericPSF)
