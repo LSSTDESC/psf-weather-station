@@ -3,7 +3,7 @@
 import numpy as np
 import pandas as pd
 from scipy.interpolate import UnivariateSpline, make_interp_spline
-from scipy.integrate import trapz
+from scipy.integrate import trapezoid
 import scipy.stats
 import os
 
@@ -384,7 +384,7 @@ def integrate_in_bins(cn2, h, edges):
         # get Cn2 interpolation at those values of h -- s=0 for no smoothing.
         cn2_i = np.exp(interpolate(h, np.log(cn2), h_i, ddz=False, s=0))
         # numerically integrate to find the J value for this bin
-        J.append(trapz(cn2_i, h_i))
+        J.append(trapezoid(cn2_i, h_i))
     
     # The dh we integrated over was in km, rather than m. Convert that now, so
     # that J has units of m**(1/3) as desired
