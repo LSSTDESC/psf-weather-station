@@ -121,7 +121,7 @@ class AtmosphericPSF():
         if self.angle_random:
             # randomize wind directions; useful for testing purposes
             ud = galsim.UniformDeviate(self.rng)
-            directions = [ud()*360*galsim.degrees for _ in len(directions)]
+            directions = [ud()*360*galsim.degrees for _ in range(len(directions))]
 
         # Draw L0 from truncated log normal, broadcast to list of layers
         gd = galsim.GaussianDeviate(self.rng)
@@ -306,7 +306,7 @@ def BuildAtmosphericPSF(config, base, ignore, gsparams, logger):
     config['rng'] = base['rng']
     config['boresight'] = None
     rq = {'alt': galsim.Angle,
-          'az' : galsim.Angle ,
+          'az' : galsim.Angle,
           'band' : str,
           'rng': galsim.BaseDeviate,
          }

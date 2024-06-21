@@ -1,23 +1,50 @@
+## bare bones example of using a config to run psfws. 
+## see also GalSim docs https://galsim-developers.github.io/GalSim/_build/html/config_process.html
+
 modules :
   - psfws.simulate_atm_psf
 
-
+eval_variables:
+    # The first letters of these variables indicates the type.
+    # c = CelestialCoord
+    # a = Angle
+    # s = string
+    # f = float
+    # So to use one of these in an Eval string, you would write just boresight,
+    # not cboresight.
+    aazimuth:
+        type: Degrees
+        theta: 60
+    aaltitude:
+        type: Degrees
+        theta: 270
+        
 psf :
   type : Convolution
   items : 
     - type : AtmosphericPSF
+      rawSeeing : 0.8
       screen_size : 200
-      band : 'i'
-      alt : 60
-      az : 270
+      band : 'r'
+      alt : $altitude 
+      az : $azimuth 
       field_x : 20
       field_y : 30 
+      angle_random : True
 
     - type : Gaussian
       sigma : 0.35
+      sed :
+         wave_type : "nm"
+         ## or wherever your rubin_sim_data / SED library lives
+         file_name : "../../rubin_sim_data/sims_sed_library/starSED/phoSimMLT/lte004.2-4.5-0.0a+0.0.BT-Settl.spec.gz"
+         flux_type : "flambda"
 
 
 image : 
+  bandpass:
+    file_name : "LSST_r.dat"
+    wave_type : "nm"
   pixel_scale : 0.2
   size : 50
   draw_method : 'phot'
