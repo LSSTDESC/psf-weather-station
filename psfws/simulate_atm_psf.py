@@ -26,14 +26,21 @@ class AtmosphericPSF():
     def __init__(self, alt, az, band, rng, boresight, rawSeeing, 
                  exptime=30.0, t0=0.0, nlayers=6, screen_size=800, exponent=-0.3,
                  kcrit=0.2, screen_scale=0.1, save_file=None, logger=None,
+<<<<<<< HEAD
                  field_x=None, field_y=None, angle_random=False):
+=======
+                 field_x=None, field_y=None):
+>>>>>>> aa4c0c62f5d5f05c069521140bcdbbf3631cb040
         self.boresight = boresight
         self.alt = alt
         self.az = az
         self.targetFWHM = rawSeeing
         self.logger = galsim.config.LoggerWrapper(logger)
         self.exponent = exponent
+<<<<<<< HEAD
         self.angle_random = angle_random
+=======
+>>>>>>> aa4c0c62f5d5f05c069521140bcdbbf3631cb040
 
         self.wlen_eff = dict(u=365.49, g=480.03, r=622.20, i=754.06, z=868.21, y=991.66)[band]
         # wlen_eff is from Table 2 of LSE-40 (y=y2)
@@ -118,11 +125,14 @@ class AtmosphericPSF():
         # psf-weather-station params
         speeds, directions, altitudes, weights = self._get_psfws_params()
 
+<<<<<<< HEAD
         if self.angle_random:
             # randomize wind directions; useful for testing purposes
             ud = galsim.UniformDeviate(self.rng)
             directions = [ud()*360*galsim.degrees for _ in range(len(directions))]
 
+=======
+>>>>>>> aa4c0c62f5d5f05c069521140bcdbbf3631cb040
         # Draw L0 from truncated log normal, broadcast to list of layers
         gd = galsim.GaussianDeviate(self.rng)
         L0 = 0
@@ -235,8 +245,12 @@ class AtmLoader(InputLoader):
                        'screen_scale' : float,
                        'save_file' : str,
                        'nlayers' : int,
+<<<<<<< HEAD
                        'exponent' : float,
                        'angle_random' : bool,
+=======
+                       'exponent' : float
+>>>>>>> aa4c0c62f5d5f05c069521140bcdbbf3631cb040
                      }
 
         # Temporary fix until GalSim 2.5 to make sure atm_psf can be built once and shared,
@@ -305,6 +319,7 @@ def BuildAtmosphericPSF(config, base, ignore, gsparams, logger):
     """
     config['rng'] = base['rng']
     config['boresight'] = None
+<<<<<<< HEAD
     rq = {'alt': galsim.Angle,
           'az' : galsim.Angle,
           'band' : str,
@@ -322,6 +337,12 @@ def BuildAtmosphericPSF(config, base, ignore, gsparams, logger):
           'boresight' : galsim.CelestialCoord,
           'angle_random' : bool,
          }
+=======
+    rq = {'alt': galsim.Angle, 'az' : galsim.Angle , 'band' : str, 'rng': galsim.BaseDeviate}
+    op = {'field_x' : float, 'field_y' : float, 't0' : float, 'exptime' : float, 'rawSeeing': float,
+          'kcrit' : float, 'screen_size' : float, 'screen_scale' : float, 'exponent' : float,
+          'boresight' : galsim.CelestialCoord}
+>>>>>>> aa4c0c62f5d5f05c069521140bcdbbf3631cb040
     kwargs, _ = galsim.config.GetAllParams(config, base, req=rq, opt=op)
     if gsparams: gsparams = galsim.GSParams(**gsparams)
     else: gsparams = None
