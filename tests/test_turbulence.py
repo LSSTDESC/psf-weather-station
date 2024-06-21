@@ -34,7 +34,7 @@ def test_turbulence_draws():
         j_fa_goal = 3.30348758e-14
     elif src == 'ecmwf':
         j_gl_goal = 2.23216667e-13
-        j_fa_goal = 6.40808818-13
+        j_fa_goal = 6.40808818e-13
         
     p = psfws.ParameterGenerator(rho_jv=.7, seed=2012)
     pt = p.draw_datapoint()
