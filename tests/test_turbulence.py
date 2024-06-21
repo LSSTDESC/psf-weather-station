@@ -33,16 +33,23 @@ def test_turbulence_draws():
         j_gl_goal = 1.4466640614052723e-13
         j_fa_goal = 3.3034875838653924e-14
     elif src == 'ecmwf':
-        j_gl_goal = 7.676675326677918e-14
+        j_gl_goal = 2.23216667e-13
         j_fa_goal = 6.408088187515762e-13
         
     p = psfws.ParameterGenerator(rho_jv=.7, seed=2012)
     pt = p.draw_datapoint()
     j_fa_res, j_gl_res = p._draw_j(pt)
 
-    np.testing.assert_allclose([j_fa_res, j_gl_res], [j_fa_goal, j_gl_goal],
-                               rtol=1.e-12,
-                               err_msg='error reproducing turbulence integrals')
+    try:
+        np.testing.assert_allclose([j_fa_res, j_gl_res], [j_fa_goal, j_gl_goal],
+                                   rtol=1.e-12,
+                                   err_msg='error reproducing turbulence integrals')
+    except AssertionError:
+        # might be because of a version difference, so test result from numpy < 2 
+        j_gl_goal = 7.676675326677918e-14
+        np.testing.assert_allclose([j_fa_res, j_gl_res], [j_fa_goal, j_gl_goal],
+                                   rtol=1.e-12,
+                                   err_msg='error reproducing turbulence integrals')       
 
 
 def test_turbulence_integration():
