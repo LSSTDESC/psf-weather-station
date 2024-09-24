@@ -5,7 +5,7 @@ import pandas as pd
 import pickle
 import pathlib
 import os
-from . import utils
+import utils
 
 DATA_DIR = utils.get_data_path()
 
@@ -41,7 +41,7 @@ def _download_ecmwf(m1, m2, lat, lon, save_path):
                   'type': 'an',  # 'an' for analysis
                   'grid': '0.25/0.25',  # need this to get lat/lon outputs!!
                   'area': f"{lat}/{lon}/{lat}/{lon}",  # N/W/S/E bounds
-                  'time': '00/06/12/18',  # output times to download
+                  'time': '00/06/18',  # output times to download
                   'date': f"{m1}/to/{m2}",
                   'class': 'ea',
                   'param': '130/131/132',  # codes for temp, wind speed comps
@@ -107,7 +107,7 @@ def _get_iter_dates(start_date, end_date):
         # iterate through the years in between d1 and d2 (inclusive) and 
         # return all the resulting iter_month results. 
         y1_end = pd.Timestamp(year=d1.year, month=12, day=31)
-        dates = [_get_iter_months(d1, y1_end)]
+        dates = _get_iter_months(d1, y1_end)
 
         for y in np.arange(d1.year + 1, d2.year):
             y_start = pd.Timestamp(year=y, month=1, day=1)
@@ -120,19 +120,16 @@ def _get_iter_dates(start_date, end_date):
     return dates
 
 
-def _process_grib(infile, t, u, v):
-    """Open downloaded grib file, add data to t,u,v dicts."""
-    import eccodes
-    with eccodes.GribFile(infile) as grib:
-        for msg in grib:
-            ts = pd.Timestamp(year=msg['year'], month=msg['month'],
-                              day=msg['day'],  hour=msg['hour'], tz='UTC')
-            for var, var_dict in zip(['T', 'U', 'V'], [t, u, v]):
-                if var in msg['name']:
-                    if ts in var_dict.keys():
-                        var_dict[ts].append(msg['values'])
-                    else:
-                        var_dict[ts] = [msg['values']]
+def _process_grib(infile):
+    """Open downloaded grib file, add data to t,u,v DataFrame with Timestamp index."""
+    import xarray as xr
+    ds = xr.load_dataset(infile)
+    data = pd.DataFrame([{'t': t.values.flatten(), 
+                          'u': u.values.flatten(),
+                          'v': v.values.flatten()} for t,u,v in zip(ds.t, ds.u, ds.v)], 
+                        index=[pd.Timestamp(t.values, tz='UTC') for t in ds.time])
+    ds.close()
+    return data
 
 
 def _delete_grib_file(file_path):
@@ -189,7 +186,7 @@ def get_ecmwf_data(start_date, end_date, lat, lon, grib_dir=None, delete=False):
             _download_ecmwf(m1.strftime('%Y-%m-%d'), m2.strftime('%Y-%m-%d'),
                             lat, lon, grib_path)
 
-    t, u, v = {}, {}, {}
+    df_list = []
 
     for m1, m2 in dates:
         # grib file name for each months data
@@ -197,18 +194,18 @@ def get_ecmwf_data(start_date, end_date, lat, lon, grib_dir=None, delete=False):
                                    m1.strftime('%Y-%m-%d'),
                                    m2.strftime('%Y-%m-%d'))
         grib_path = pathlib.Path.joinpath(grib_dir, grib_f)
-        _process_grib(grib_path, t, u, v)
+        df_list.append(_process_grib(grib_path.as_posix()))
 
         if delete:
             _delete_grib_file(grib_path)
 
-    timestamps = t.keys()
-    values_dict = [{'t': t[ts], 'u': u[ts], 'v':v[ts]} for ts in timestamps]
-    tuv_df = pd.DataFrame(values_dict, index=timestamps)
+    tuv_df = pd.concat(df_list)
 
     save_file = f'ecmwf_{lat}_{lon}_{start_date}_{end_date}.p'
     save_path = pathlib.Path.joinpath(grib_dir, save_file)
-    pickle.dump(tuv_df, open(save_path, 'wb'))
+    
+    with open(save_path, 'wb') as f:
+        pickle.dump(tuv_df, f)
 
 
 if __name__ == '__main__':
@@ -224,7 +221,7 @@ if __name__ == '__main__':
     
     # if no custom option defined, put the grib files in the data folder
     if args.grib_dir is None:
-        grib_dir = DATA_DIR
+        grib_dir = pathlib.Path(DATA_DIR)
     else:
         grib_dir = pathlib.Path(args.grib_dir)
     # move CWD to data directory for easier downloading/etc
