@@ -89,7 +89,8 @@ class ParameterGenerator():
 
     def __init__(self, seed=None, h_tel=2.715, gl_height=0.8, turbulence=None,
                  forecast_file='ecmwf_-30.25_-70.75_20190501_20191031.p',
-                 telemetry_file='tel_dict_CP_20190501-20191101.pkl', rho_jv=0):
+                 telemetry_file='tel_dict_CP_20190501-20191101.pkl', 
+                 rho_jv=0, data_dir=data_dir):
         # set up the paths to data files, and check they exist.
         self._paths = \
             {'forecast_data': pathlib.Path.joinpath(data_dir, forecast_file),
@@ -138,7 +139,8 @@ class ParameterGenerator():
 
     def _load_data(self, use_telemetry=True):
         """Load data from forecast, telemetry files, match, and store."""
-        forecast = pickle.load(open(self._paths['forecast_data'], 'rb'))
+        with open(self._paths['forecast_data'], 'rb') as f:
+            forecast = pickle.load(f)
         forecast = utils.process_forecast(forecast)
 
         # load heights and pressures
@@ -168,7 +170,7 @@ class ParameterGenerator():
             for k in ['u', 'v', 't', 'speed', 'phi']:
                 gl[k] = np.array([utils.interpolate(h, f, 
                                                     self.h0 + .05, ddz=False) 
-                                  for f in forecast.loc[k].values])
+                                  for f in forecast[k].values])
             self.data_gl = pd.DataFrame(data=gl, index=forecast.index)
         
         # how many datapoints we have now after selections
