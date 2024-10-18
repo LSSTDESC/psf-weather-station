@@ -40,6 +40,7 @@ class AtmosphericPSF():
 
         # need to correct airmass here (the correction within psfws gets normalized out,
         # because of the overall r0 calibration)
+        airmass = 1 / np.cos(np.pi/2-self.alt.rad)
         self.targetFWHM = rawSeeing * airmass**0.6 * (self.wlen_eff/500)**(-0.3)
 
         self.rng = rng
@@ -82,7 +83,7 @@ class AtmosphericPSF():
 
         # Instantiate screens now instead of delaying until after multiprocessing
         # has started.
-        r0 = self.r0_500_effective * (self.wlen_eff/500.0)**(6./5)
+        r0 = self.atm.r0_500_effective * (self.wlen_eff/500.0)**(6./5)
         kmax = kcrit / r0
 
         self.logger.info("Instantiating atmospheric screens")
