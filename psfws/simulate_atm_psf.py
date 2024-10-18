@@ -30,13 +30,17 @@ class AtmosphericPSF():
         self.boresight = boresight
         self.alt = alt
         self.az = az
-        self.targetFWHM = rawSeeing
+        self.rawSeeing = rawSeeing
         self.logger = galsim.config.LoggerWrapper(logger)
         self.exponent = exponent
         self.angle_random = angle_random
 
         self.wlen_eff = dict(u=365.49, g=480.03, r=622.20, i=754.06, z=868.21, y=991.66)[band]
         # wlen_eff is from Table 2 of LSE-40 (y=y2)
+
+        # need to correct airmass here (the correction within psfws gets normalized out,
+        # because of the overall r0 calibration)
+        self.targetFWHM = rawSeeing * airmass**0.6 * (self.wlen_eff/500)**(-0.3)
 
         self.rng = rng
         self.t0 = t0
@@ -78,7 +82,7 @@ class AtmosphericPSF():
 
         # Instantiate screens now instead of delaying until after multiprocessing
         # has started.
-        r0 = atm_kwargs['r0_500'] * (self.wlen_eff/500.0)**(6./5)
+        r0 = self.r0_500_effective * (self.wlen_eff/500.0)**(6./5)
         kmax = kcrit / r0
 
         self.logger.info("Instantiating atmospheric screens")
