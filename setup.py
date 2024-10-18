@@ -20,7 +20,7 @@ setup(
     description='generate realistic wind and turbulence parameters for atmospheric point-spread function simulations',
     url='https://github.com/LSSTDESC/psf-weather-station',
     author='Claire-Alice Hebert',
-    author_email='chebert@stanford.edu',
+    author_email='chebert@bnl.gov',
     license='MIT',
     packages=['psfws'],
     package_data={'psfws': data_files},
