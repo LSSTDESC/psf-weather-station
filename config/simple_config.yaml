@@ -14,10 +14,10 @@ eval_variables:
     # not cboresight.
     aazimuth:
         type: Degrees
-        theta: 60
+        theta: 270
     aaltitude:
         type: Degrees
-        theta: 270
+        theta: 60
         
 psf :
   type : Convolution
@@ -37,7 +37,7 @@ psf :
       sed :
          wave_type : "nm"
          ## or wherever your rubin_sim_data / SED library lives
-         file_name : "../../rubin_sim_data/sims_sed_library/starSED/phoSimMLT/lte004.2-4.5-0.0a+0.0.BT-Settl.spec.gz"
+         file_name : "/Users/clairealice/Documents/share/rubin_sim_data/sims_sed_library/starSED/phoSimMLT/lte004.2-4.5-0.0a+0.0.BT-Settl.spec.gz"
          flux_type : "flambda"
 
 
