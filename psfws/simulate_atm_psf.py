@@ -23,13 +23,14 @@ class AtmosphericPSF():
 
     A random realization of the atmosphere will be produced when this class is
     instantiated. Realistic weather parameters from psf-weather-station."""
-    def __init__(self, alt, az, band, rng, boresight, rawSeeing, 
+    def __init__(self, alt, az, band, rng, boresight, rawSeeing, airmass,
                  exptime=30.0, t0=0.0, nlayers=6, screen_size=800, exponent=-0.3,
                  kcrit=0.2, screen_scale=0.1, save_file=None, logger=None,
                  field_x=None, field_y=None, angle_random=False):
         self.boresight = boresight
         self.alt = alt
         self.az = az
+        self.airmass = airmass
         self.rawSeeing = rawSeeing
         self.logger = galsim.config.LoggerWrapper(logger)
         self.exponent = exponent
@@ -40,7 +41,6 @@ class AtmosphericPSF():
 
         # need to correct airmass here (the correction within psfws gets normalized out,
         # because of the overall r0 calibration)
-        airmass = 1 / np.cos(np.pi/2-self.alt.rad)
         self.targetFWHM = rawSeeing * airmass**0.6 * (self.wlen_eff/500)**(-0.3)
 
         self.rng = rng
@@ -152,7 +152,7 @@ class AtmosphericPSF():
         )
 
         if self.logger:
-            self.logger.debug("airmass = {}".format(1 / np.cos(np.pi/2-self.alt.rad)))
+            # self.logger.debug("airmass = {}".format(1 / np.cos(np.pi/2-self.alt.rad)))
             self.logger.debug("wlen_eff = {}".format(self.wlen_eff))
             self.logger.debug("r0_500 = {}".format(r0_500))
             self.logger.debug("L0 = {}".format(L0))
@@ -226,6 +226,7 @@ class AtmLoader(InputLoader):
         logger.debug("Get kwargs for AtmosphericPSF")
 
         req_params = { 
+                       'airmass' : float,
                        'band' : str,
                        'boresight' : galsim.CelestialCoord,
                        'rawSeeing' : float,
@@ -313,7 +314,8 @@ def BuildAtmosphericPSF(config, base, ignore, gsparams, logger):
     rq = {'alt': galsim.Angle,
           'az' : galsim.Angle,
           'band' : str,
-          'rng': galsim.BaseDeviate,
+          'rng' : galsim.BaseDeviate,
+          'airmass' : airmass,
          }
     op = {'field_x' : float,
           'field_y' : float,
